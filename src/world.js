@@ -3,10 +3,10 @@
 const T_ = G.TILE;
 G.T = {
   EMPTY: 0, SOLID: 1, ONEWAY: 2, BRICK: 3, SPIKE: 4, SPIKE_DOWN: 5, BONUS: 6, USED: 7,
-  CRUMBLE: 8, LIQUID: 9, GATE: 10, HEAVY: 11, CRACKED: 12, ICE: 13,
+  CRUMBLE: 8, LIQUID: 9, GATE: 10, HEAVY: 11, CRACKED: 12, ICE: 13, CONV_L: 14, CONV_R: 15,
 };
 const TT = G.T;
-const SOLID_SET = new Set([TT.SOLID, TT.BRICK, TT.SPIKE, TT.SPIKE_DOWN, TT.BONUS, TT.USED, TT.CRUMBLE, TT.GATE, TT.HEAVY, TT.CRACKED, TT.ICE]);
+const SOLID_SET = new Set([TT.SOLID, TT.BRICK, TT.SPIKE, TT.SPIKE_DOWN, TT.BONUS, TT.USED, TT.CRUMBLE, TT.GATE, TT.HEAVY, TT.CRACKED, TT.ICE, TT.CONV_L, TT.CONV_R]);
 G.SOLID_SET = SOLID_SET;
 
 // Темы: жидкость (hurt — ранит, swim — можно плавать) и цвета обломков
@@ -49,7 +49,8 @@ G.Level = class Level {
     this.props = [];
     this.start = { x: 32, y: (H - 3) * T_ };
     this.arena = null;
-    let ox = 0, sign = 0, hint = 0;
+    let ox = 0, sign = 0, hint = 0, glyph = 0;
+    this.glyphCount = 0;
     for (const p of parts) {
       const oy = H - p.rows.length;
       if (p.name.startsWith('arena')) this.arena = { x: ox * T_, tx: ox, w: p.w };
@@ -66,6 +67,18 @@ G.Level = class Level {
             case 'X': set(TT.HEAVY); break;
             case 'Z': set(TT.CRACKED); break;
             case 'I': set(TT.ICE); break;
+            case '<': set(TT.CONV_L); break;
+            case '>': set(TT.CONV_R); break;
+            case 'R': this.spawns.push({ type: 'firebar', x: wx + 8, y: wy + 8 }); break;
+            case 'W': this.spawns.push({ type: 'crusher', x: wx + 8, y: wy + T_ }); break;
+            case 'J': this.spawns.push({ type: 'saw', x: wx + 8, y: wy + T_ }); break;
+            case 'Y': this.spawns.push({ type: 'icicle', x: wx + 8, y: wy + T_ }); break;
+            case '0': this.spawns.push({ type: 'boulders', x: wx + 8, y: wy + T_, dir: -1 }); break;
+            case '1': this.spawns.push({ type: 'boulders', x: wx + 8, y: wy + T_, dir: 1 }); break;
+            case '8': this.spawns.push({ type: 'mace', x: wx + 8, y: wy + T_ }); break;
+            case '9': this.spawns.push({ type: 'geyser', x: wx + 8, y: wy + T_ }); break;
+            case '6': this.spawns.push({ type: 'rising', x: wx }); break;
+            case '+': this.spawns.push({ type: 'glyph', x: wx + 8, y: wy + T_, idx: glyph++ }); break;
             case '^': set(TT.SPIKE); break;
             case 'v': set(TT.SPIKE_DOWN); break;
             case 'F': set(TT.CRUMBLE); break;
@@ -107,6 +120,7 @@ G.Level = class Level {
       }
     }
     for (let i = 0; i < this.bg.length; i++) if (this.bg[i] === 2) this.bg[i] = 1;
+    this.glyphCount = this.spawns.filter((s) => s.type === 'glyph').length;
     this.decorate();
   }
 
@@ -247,6 +261,7 @@ G.Physics = {
           b.groundTy = ty;
           if (b.isPlayer) for (let k = x0; k <= x1; k++) {
             const tk = level.get(k, ty);
+            if (tk === TT.CONV_L || tk === TT.CONV_R) b.groundTile = tk;
             if (tk === TT.CRUMBLE) level.touchCrumble(k, ty);
             if (tk === TT.ICE) b.groundTile = TT.ICE;
           }

@@ -4,7 +4,7 @@ G.Tiles = (() => {
   const S = {};
   const TT = G.T;
   const A = G.Art;
-  const isGround = (t) => t === TT.SOLID || t === TT.GATE || t === TT.ICE || t === TT.CRACKED;
+  const isGround = (t) => t === TT.SOLID || t === TT.GATE || t === TT.ICE || t === TT.CRACKED || t === TT.CONV_L || t === TT.CONV_R;
 
   function part(theme, name) { return `t_${theme}_${name}`; }
   function blit(c, name, x, y) {
@@ -49,6 +49,12 @@ G.Tiles = (() => {
         if (!t) continue;
         const x = tx * 16, y = ty * 16, h = G.hash2(tx, ty);
         switch (t) {
+          case TT.CONV_L: case TT.CONV_R: {
+            blit(c, part(th, groundPart(L, tx, ty, h)), x, y);
+            const f = G.Art.frame('h_conveyor', frame + tx * 0);
+            if (t === TT.CONV_R) G.Art.draw(c, f, x, y); else G.Art.draw(c, f, x + 16, y, true);
+            break;
+          }
           case TT.SOLID: case TT.GATE: case TT.ICE: case TT.CRACKED: {
             if (t === TT.GATE) { G.Gfx.spr('i_gate', x, y); break; }
             if (t === TT.ICE && A.has(part(th, 'ice'))) { blit(c, part(th, 'ice'), x, y); break; }

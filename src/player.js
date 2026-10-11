@@ -237,6 +237,8 @@ G.Player = class Player extends G.Entity {
       if (this.platform.dy) G.Physics.moveY(this, L, this.platform.dy);
     }
 
+    // конвейер
+    if (this.onGround && (this.groundTile === G.T.CONV_L || this.groundTile === G.T.CONV_R)) G.Physics.moveX(this, L, this.groundTile === G.T.CONV_R ? 0.9 : -0.9);
     // вода
     const midT = L.tileAt(this.cx, this.y + 10);
     const wasWater = this.inWater;

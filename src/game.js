@@ -54,8 +54,9 @@ G.Game = class Game {
     this.bossDoneT = 0;
     this.eyeMode = 0;
     this.wind = 0;
+    G.UI.toast(null);
     for (const a of this.abilitiesFor(i)) this.abil.add(a);
-    if (!keepCheckpoint) { this.checkpoint = null; this.levelCoins = 0; }
+    if (!keepCheckpoint) { this.checkpoint = null; this.levelCoins = 0; this.levelGlyphs = 0; }
     const L = this.level;
     this.arena = null;
     if (L.arena) {
@@ -80,6 +81,15 @@ G.Game = class Game {
         case 'sign': e = new G.Sign(s.x, s.y, s.text); break;
         case 'hint': e = new G.HintZone(s.x, s.y, s.text); break;
         case 'target': e = new G.SpearTarget(s.x, s.y); break;
+        case 'firebar': e = new G.FireBar(s.x, s.y, G.hash2(s.x, s.y) < 0.5 ? 1 : -1); break;
+        case 'crusher': e = new G.Crusher(s.x, s.y); break;
+        case 'saw': e = new G.Saw(s.x, s.y, L); break;
+        case 'icicle': e = new G.Icicle(s.x, s.y, L); break;
+        case 'boulders': e = new G.BoulderSpawner(s.x, s.y, s.dir); break;
+        case 'mace': e = new G.Mace(s.x, s.y, L); break;
+        case 'geyser': e = new G.Geyser(s.x, s.y); break;
+        case 'rising': e = new G.RisingLiquid(s.x, L); break;
+        case 'glyph': e = this.glyphTaken(s.idx) ? null : new G.Glyph(s.x, s.y, s.idx); break;
         case 'torch': e = new G.Torch(s.x, s.y); break;
         case 'prop': break;
         default: if (s.enemy) e = G.makeEnemy(s, L);
@@ -96,6 +106,19 @@ G.Game = class Game {
     this.cam.y = G.clamp(this.player.cy - G.H * 0.6, 0, L.h * 16 - G.H);
     this.cam.lx = 0;
     G.Backgrounds.prewarm(L.theme);
+  }
+  glyphTaken(i) { const m = (G.Save.data.secrets || {})[this.levelIdx] || 0; return !!(m & (1 << i)) && this.levelGlyphs !== undefined && false; }
+  collectGlyph(i, x, y) {
+    this.levelGlyphs = (this.levelGlyphs || 0) | (1 << i);
+    const s = G.Save.data;
+    s.secrets = s.secrets || {};
+    s.secrets[this.levelIdx] = (s.secrets[this.levelIdx] || 0) | (1 << i);
+    G.Save.store();
+    this.addCoins(100, x, y - 8);
+    G.Audio.play('secret');
+    G.Particles.fx('fx_ring', x, y);
+    const n = [...Array(8).keys()].filter((k) => this.levelGlyphs & (1 << k)).length;
+    G.UI.toast(`СЕКРЕТНЫЙ МЕДАЛЬОН ${n}/${this.level.glyphCount}`);
   }
   lifeTaken(s) { return !!(this.takenLives && this.takenLives.has(this.levelIdx + ':' + s.tx + ':' + s.ty)); }
 
@@ -187,6 +210,7 @@ G.Game = class Game {
     switch (s) {
       case 'title': G.Audio.music('title'); break;
       case 'intro': G.Audio.stopMusic(); break;
+      case 'story': G.Audio.music('shop'); this.storyI = 0; this.storyT = 0; break;
       case 'play': G.Audio.music(this.bossStarted ? 'boss' : G.LEVELS[this.levelIdx].music); break;
       case 'gameover': G.Audio.stopMusic(); break;
       case 'clear': G.Audio.stopMusic(); G.Audio.play('clear'); break;
@@ -207,8 +231,9 @@ G.Game = class Game {
       this.stats.shot = Math.min(3, 1 + Math.floor(idx / 3));
     }
     this.startLevel(idx);
-    this.setState('intro');
+    this.beginStage();
   }
+  beginStage() { this.setState(G.LEVELS[this.levelIdx].story ? 'story' : 'intro'); }
 
   // ---------------------------------------------------------------- шаг
   step() {
@@ -325,7 +350,7 @@ G.Game = class Game {
     X.screen();
     c.fillStyle = '#000';
     c.fillRect(0, 0, G.W, G.H);
-    if (this.level && ['play', 'pause', 'intro', 'clear', 'ability'].includes(this.state)) this.renderWorld();
+    if (this.level && ['play', 'pause', 'intro', 'clear', 'ability', 'story'].includes(this.state)) this.renderWorld();
     G.UI.draw(this);
     X.screen();
     if (this.flash.t > 0) {

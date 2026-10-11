@@ -85,6 +85,23 @@ G.UI = (() => {
         }
         break;
       }
+      case 'story': {
+        const lines = game.endingStory ? G.ENDING_STORY : G.LEVELS[game.levelIdx].story;
+        game.storyT++;
+        const full = lines[game.storyI][2].length;
+        if (game.storyT % 2 === 0 && game.storyT / 2 <= full) G.Audio.play('text');
+        if (I.pressed('pause')) game.storyI = lines.length;
+        else if (I.pressed('confirm') || I.pressed('shoot')) {
+          if (game.storyT / 2 < full) game.storyT = full * 2;
+          else { game.storyI++; game.storyT = 0; G.Audio.play('select'); }
+        }
+        if (game.storyI >= lines.length) {
+          if (game.endingStory) { game.endingStory = false; game.fadeTo(() => game.setState('ending'), 0.03); }
+          else game.setState('intro');
+          game.storyI = 0;
+        }
+        break;
+      }
       case 'ability':
         if (game.stateT > 50 && I.pressed('confirm')) { G.Audio.play('confirm'); game.state = 'play'; }
         break;
@@ -101,14 +118,14 @@ G.UI = (() => {
       case 'clear':
         if (game.stateT > 90 && I.pressed('confirm')) {
           G.Audio.play('confirm');
-          if (game.levelIdx >= G.LEVELS.length - 1) game.fadeTo(() => game.setState('ending'), 0.02);
+          if (game.levelIdx >= G.LEVELS.length - 1) game.fadeTo(() => { game.endingStory = true; game.setState('story'); }, 0.03);
           else game.fadeTo(() => game.setState('shop'));
         }
         break;
       case 'shop': {
         const items = shopItems(game), n = items.length + 1, i = nav(game, n);
         if (I.pressed('confirm') && game.stateT > 20) {
-          if (i === items.length) { G.Audio.play('confirm'); game.fadeTo(() => { game.startLevel(game.levelIdx + 1); game.setState('intro'); }); }
+          if (i === items.length) { G.Audio.play('confirm'); game.fadeTo(() => { game.startLevel(game.levelIdx + 1); game.beginStage(); }); }
           else {
             const it = items[i], cur = it.cur(game), price = it.price(cur);
             if (cur >= it.max || game.coins < price) { G.Audio.play('deny'); U.msg = cur >= it.max ? 'Больше не могу дать.' : 'Не хватает монет, юный.'; U.msgT = 90; }
@@ -124,9 +141,50 @@ G.UI = (() => {
     }
   };
 
+  U.toast = (text) => { toastMsg = text ? { text, t: 0 } : null; };
+  let toastMsg = null;
+  function drawToast() {
+    if (!toastMsg) return;
+    const t = ++toastMsg.t;
+    if (t > 150) { toastMsg = null; return; }
+    if (t > 120 && t % 4 < 2) return;
+    T(toastMsg.text, W / 2, 46, { align: 'center', color: '#ffe060', outline: '#2a1000' });
+  }
+  function drawStory(game) {
+    const lines = game.endingStory ? G.ENDING_STORY : G.LEVELS[game.levelIdx].story;
+    const ln = lines[Math.min(game.storyI, lines.length - 1)];
+    if (!ln) return;
+    const [por, name, text] = ln;
+    X.rect(0, 0, W, H, 'rgba(8,4,16,0.55)');
+    const bx = 16, by = H - 86, bw = W - 32, bh = 70;
+    X.frame(bx, by, bw, bh);
+    // портрет
+    const s = G.Art.get(por);
+    if (s) {
+      X.rect(bx + 8, by + 8, 52, 52, '#0c0614');
+      const k = s.w <= 32 ? 1.5 : 1;
+      X.ctx.drawImage(s.img, Math.round(bx + 34 - (s.w * k) / 2), Math.round(by + 34 - (s.h * k) / 2), Math.round(s.w * k), Math.round(s.h * k));
+    }
+    T(name, bx + 68, by + 9, { color: name === 'Мицу' ? '#9affc8' : name === 'Заркун' ? '#ff80c0' : '#ffd060' });
+    // печать текста по буквам с переносом
+    const shown = text.slice(0, Math.floor(game.storyT / 2));
+    const maxW = bw - 80;
+    const words = shown.split(' ');
+    let line = '', y = by + 24;
+    for (const w of words) {
+      if (X.textWidth(line + w) > maxW) { T(line, bx + 68, y, { color: '#fff3c8' }); y += 11; line = ''; }
+      line += w + ' ';
+    }
+    T(line, bx + 68, y, { color: '#fff3c8' });
+    if (game.storyT / 2 >= text.length && game.frame % 40 < 28) T('Z ▼', bx + bw - 12, by + bh - 14, { align: 'right', color: '#ffe060' });
+    T('ESC — пропустить', W - 20, 8, { align: 'right', color: '#a098b8', shadow: false });
+  }
+
   U.draw = (game) => {
     X.screen();
+    if (game.state === 'play') drawToast();
     switch (game.state) {
+      case 'story': return drawStory(game);
       case 'boot': return drawBoot(game);
       case 'title': case 'select': case 'controls': return drawTitle(game);
       case 'play': case 'pause': case 'ability':
@@ -338,6 +396,10 @@ G.UI = (() => {
     T('ЭТАП ПРОЙДЕН!', W / 2, 60, { align: 'center', scale: 2, color: '#ffe060', outline: '#2a1000', alpha: k });
     X.spr(G.Art.frame('hero_win', game.frame), W / 2, 150);
     if (t > 30) T(`Монет на этапе: ${game.levelCoins}`, W / 2, 92, { align: 'center' });
+    if (t > 70 && game.level && game.level.glyphCount) {
+      const n = [...Array(8).keys()].filter((k) => (game.levelGlyphs || 0) & (1 << k)).length;
+      T(`Секретные медальоны: ${n} / ${game.level.glyphCount}`, W / 2, 116, { align: 'center', color: n === game.level.glyphCount ? '#9affc8' : '#c0b0e0' });
+    }
     if (t > 50) T(`Всего монет: ${game.coins}`, W / 2, 104, { align: 'center', color: '#ffd060' });
     if (t > 90 && game.frame % 40 < 28) T(game.levelIdx >= G.LEVELS.length - 1 ? 'Z — дальше' : 'Z — в лавку мастера', W / 2, 190, { align: 'center', color: '#9affc8' });
   }
