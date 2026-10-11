@@ -296,7 +296,7 @@ G.UI = (() => {
       X.rect(x, y, w, 4, '#3a0a18');
       X.rect(x, y, Math.round(w * (b.hp / b.maxHp) * intro), 4, '#e8203a');
       X.rect(x, y, Math.round(w * (b.hp / b.maxHp) * intro), 1, '#ff9a8a');
-      X.rect(x + w / 2, y, 1, 4, '#ffffff');
+      for (const m of b.marks || [0.5]) X.rect(x + Math.round(w * m), y, 1, 4, '#ffffff');
     }
     if (game.hint && game.state === 'play') drawHint(game.hint, game);
     if (banner) {
