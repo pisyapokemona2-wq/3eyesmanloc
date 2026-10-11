@@ -8,10 +8,18 @@
 - Чистый JavaScript + Canvas 2D + WebAudio. Никаких внешних файлов-ассетов: весь арт — спрайты
   в виде строк в `src/art/*.js`, музыка и звуки синтезируются.
 
-## Запуск
+## Запуск (Windows)
 
-Откройте `index.html` в браузере. Сервер не нужен. (Пиксельный шрифт подгружается из Google Fonts;
-без интернета будет стандартный шрифт.) Лучше всего — во весь экран (F11) на мониторе 1080p.
+Скачайте **ThirdEye.exe** со страницы Releases (релиз «game» — последняя сборка):
+https://github.com/pisyapokemona2-wq/3eyesmanloc/releases/download/game/ThirdEye.exe
+
+Это один файл (~4 МБ), установка не нужна. Нужен Windows 10/11 (движок WebView2 встроен в систему).
+F11 или Alt+Enter — окно / полный экран.
+
+Сборка вручную: `node tools/build-exe-lite.js` → `dist/ThirdEye.exe` (Neutralino, игра вшита в exe).
+Каждый push собирает exe в GitHub Actions и обновляет релиз «game».
+
+Для разработки можно просто открыть `index.html` в браузере.
 
 ## Управление
 
