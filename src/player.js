@@ -156,6 +156,7 @@ G.Player = class Player extends G.Entity {
     this.deathT = 0;
     this.airJumps = 0; this.flipT = 0;
     this.dashT = 0; this.canDash = true; this.dashCd = 0;
+    this.upWait = 0; this.upRecent = 0; this.shootRecent = 0; this.upJump = false; this.downHold = 0;
     this.wallDir = 0; this.wallLock = 0;
     this.pounding = false;
     this.inWater = false;
@@ -225,7 +226,7 @@ G.Player = class Player extends G.Entity {
       if (this.deathT === 110) game.onPlayerDeath();
       return;
     }
-    for (const k of ['invuln', 'stun', 'slow', 'shotCd', 'throwT', 'shootAnim', 'wallLock', 'dashCd', 'flipT', 'landT']) if (this[k] > 0) this[k]--;
+    for (const k of ['invuln', 'stun', 'slow', 'shotCd', 'throwT', 'shootAnim', 'wallLock', 'dashCd', 'flipT', 'landT', 'upRecent', 'shootRecent']) if (this[k] > 0) this[k]--;
 
     const locked = this.controlLocked || game.state !== 'play' || this.winT > 0;
     const can = this.stun <= 0 && !locked;
@@ -301,9 +302,24 @@ G.Player = class Player extends G.Entity {
     // --- ПРЫЖКИ
     if (this.onGround || this.inWater) { this.coyote = 6; this.airJumps = 0; this.canDash = true; }
     else if (this.coyote > 0) this.coyote--;
-    if (can && I.pressed('jump')) this.jumpBuf = 7; else if (this.jumpBuf > 0) this.jumpBuf--;
+    // ↑ тоже прыгает, но с окном в 4 кадра: если за это время нажат X — это выстрел вверх, а не прыжок
+    let jumpPress = can && I.pressed('jump');
+    if (I.pressed('up')) this.upRecent = 10;
+    if (I.pressed('shoot')) this.shootRecent = 10;
+    if (G.Save.data.upJump !== false && can) {
+      if (I.pressed('up') && !I.down('shoot') && this.shootRecent <= 0) this.upWait = 4;
+      if (this.upWait > 0) {
+        if (I.down('shoot')) this.upWait = 0;
+        else if (--this.upWait === 0) { jumpPress = true; this.upJump = true; }
+      }
+    } else this.upWait = 0;
+    if (jumpPress) this.jumpBuf = 7; else if (this.jumpBuf > 0) this.jumpBuf--;
     this.dropping = false;
-    if (this.jumpBuf > 0 && can && down && !this.onGround && this.has('pound') && !this.inWater && !this.pounding) {
+    // удар сверху: просто ↓ в воздухе (или ↓+прыжок)
+    const poundIn = can && !this.onGround && (I.pressed('down') || (this.jumpBuf > 0 && down)) && this.coyote <= 0;
+    // спуск с платформы: ↓+прыжок или просто подержать ↓
+    this.downHold = down && onOneway && !left && !right ? (this.downHold || 0) + 1 : 0;
+    if (poundIn && this.has('pound') && !this.inWater && !this.pounding && this.dashT <= 0) {
       // удар сверху
       this.pounding = true;
       this.jumpBuf = 0;
@@ -311,7 +327,8 @@ G.Player = class Player extends G.Entity {
       this.vx = 0;
       this.dashT = 0;
       G.Audio.play('pound');
-    } else if (this.jumpBuf > 0 && can && down && onOneway) {
+    } else if ((this.jumpBuf > 0 && can && down && onOneway) || this.downHold > 12) {
+      this.downHold = 0;
       this.dropT = 10;
       this.y += 2;
       this.jumpBuf = 0; this.coyote = 0; this.platform = null;
@@ -348,15 +365,16 @@ G.Player = class Player extends G.Entity {
       G.Audio.play('spring');
       G.Particles.fx('fx_ring', this.cx, this.bottom);
     }
-    if (this.jumpHeld && !I.down('jump') && this.vy < -2 && !this.springBoost) { this.vy *= 0.5; this.jumpHeld = false; }
-    if (this.vy >= 0) this.jumpHeld = false;
+    const holding = I.down('jump') || (this.upJump && I.down('up'));
+    if (this.jumpHeld && !holding && this.vy < -2 && !this.springBoost) { this.vy *= 0.5; this.jumpHeld = false; }
+    if (this.vy >= 0) { this.jumpHeld = false; this.upJump = false; }
 
     // гравитация
     if (this.dashT <= 0) {
       if (this.pounding) this.vy = Math.min(this.vy + 0.9, 9);
       else if (this.inWater) this.vy = Math.min(this.vy + 0.12, 1.4);
       else {
-        const g = Math.abs(this.vy) < 1.1 && I.down('jump') ? 0.24 : 0.36;
+        const g = Math.abs(this.vy) < 1.1 && (I.down('jump') || (this.upJump && I.down('up'))) ? 0.24 : 0.36;
         this.vy = Math.min(this.vy + g, 6.6);
         if (this.wallDir !== 0 && this.vy > 1.1) { this.vy = 1.1; if (this.t % 5 === 0) G.Particles.add({ x: this.wallDir > 0 ? this.x + this.w : this.x, y: this.y + 8, vy: 0.3, life: 14, color: '#d8ccbc' }); }
       }
@@ -440,7 +458,7 @@ G.Player = class Player extends G.Entity {
     if (!this.has('shot')) return;
     const I = G.Input, st = game.stats;
     const ey = this.y + (this.crouching ? 2 : 4), ex = this.cx + this.facing * 5;
-    const up = I.down('up') && !this.crouching ? -Math.PI / 4 : 0;
+    const up = (I.down('up') || this.upRecent > 0) && !this.crouching ? -Math.PI / 4 : 0;
     this.aimUp = up !== 0;
     if (game.eyeMode > 0) {
       if (I.down('shoot') && this.shotCd <= 0) {

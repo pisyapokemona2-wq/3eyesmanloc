@@ -225,7 +225,7 @@ G.Game = class Game {
       this.fadeTo(() => this.restartFinal());
       return;
     }
-    this.lives--;
+    if (!G.Save.data.revive) this.lives--; // режим воскрешения (для тестов) — жизни не тратятся
     if (this.lives < 0) this.fadeTo(() => this.setState('gameover'));
     else this.fadeTo(() => { this.startLevel(this.levelIdx, true); this.setState('intro'); });
   }

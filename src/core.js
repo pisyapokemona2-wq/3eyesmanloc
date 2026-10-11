@@ -62,7 +62,7 @@ G.Save = {
   key: 'third-eye-save-v2',
   data: null,
   defaults() {
-    return { unlocked: 1, bestCoins: 0, cleared: false, music: 0.6, sfx: 0.8, shake: true, upJump: true, secrets: {} };
+    return { unlocked: 1, bestCoins: 0, cleared: false, music: 0.6, sfx: 0.8, shake: true, upJump: true, revive: false, secrets: {} };
   },
   load() {
     try {

@@ -50,6 +50,7 @@ G.UI = (() => {
     items.push({ id: 'music', label: 'МУЗЫКА  ' + Math.round(s.music * 100) + '%' });
     items.push({ id: 'sfx', label: 'ЗВУКИ   ' + Math.round(s.sfx * 100) + '%' });
     items.push({ id: 'shake', label: 'ТРЯСКА  ' + (s.shake ? 'ВКЛ' : 'ВЫКЛ') });
+    items.push({ id: 'revive', label: 'ВОСКРЕШЕНИЕ (тест)  ' + (s.revive ? 'ВКЛ' : 'ВЫКЛ') });
     items.push({ id: 'upjump', label: 'ПРЫЖОК НА ↑  ' + (s.upJump !== false ? 'ВКЛ' : 'ВЫКЛ') });
     return items;
   }
@@ -82,6 +83,7 @@ G.UI = (() => {
           else if (it.id === 'select') { game.state = 'select'; game.menu = { i: 0 }; }
           else if (it.id === 'controls') game.state = 'controls';
           else if (it.id === 'shake') { G.Save.data.shake = !G.Save.data.shake; G.Save.store(); }
+          else if (it.id === 'revive') { G.Save.data.revive = !G.Save.data.revive; G.Save.store(); }
           else if (it.id === 'upjump') { G.Save.data.upJump = G.Save.data.upJump === false; G.Save.store(); }
         }
         break;
@@ -96,12 +98,13 @@ G.UI = (() => {
         if (I.pressed('back') || I.pressed('confirm') || I.pressed('pause')) { game.state = 'title'; game.menu = { i: 0 }; G.Audio.play('select'); }
         break;
       case 'pause': {
-        const i = nav(game, 3);
+        const i = nav(game, 4);
         if (I.pressed('pause')) { game.state = 'play'; G.Audio.play('pause'); break; }
         if (I.pressed('confirm')) {
           G.Audio.play('confirm');
           if (i === 0) game.state = 'play';
           else if (i === 1) { game.state = 'play'; game.player.controlLocked = true; game.fadeTo(() => { game.startLevel(game.levelIdx, true); game.setState('intro'); }); }
+          else if (i === 2) { G.Save.data.revive = !G.Save.data.revive; G.Save.store(); }
           else game.fadeTo(() => game.setState('title'));
         }
         break;
@@ -128,10 +131,11 @@ G.UI = (() => {
         break;
       case 'gameover': {
         if (game.stateT < 60) break;
-        const i = nav(game, 2);
+        const i = nav(game, 3);
         if (I.pressed('confirm')) {
           G.Audio.play('confirm');
-          if (i === 0) game.fadeTo(() => { game.lives = 3; game.coins = Math.floor(game.coins / 2); game.startLevel(game.levelIdx); game.setState('intro'); });
+          if (i === 0) game.fadeTo(() => { game.lives = 0; game.startLevel(game.levelIdx, true); game.setState('intro'); });
+          else if (i === 1) game.fadeTo(() => { game.lives = 3; game.coins = Math.floor(game.coins / 2); game.startLevel(game.levelIdx); game.setState('intro'); });
           else game.fadeTo(() => game.setState('title'));
         }
         break;
@@ -274,7 +278,7 @@ G.UI = (() => {
     } else {
       X.frame(W / 2 - 170, 96, 340, 150);
       T('УПРАВЛЕНИЕ', W / 2, 104, { align: 'center', color: '#9affc8' });
-      const rows = [['← →', 'ходьба'], ['↓', 'присесть'], ['Z или ↑', 'прыжок'], ['C', 'копьё: бросить / вернуть'], ['X', 'выстрел глазом *'], ['↑ + X', 'выстрел вверх *'], ['SHIFT', 'рывок *'], ['↓ + Z', 'удар сверху (в прыжке) *'], ['V', 'пробуждение глаза *'], ['ESC', 'пауза']];
+      const rows = [['← →', 'ходьба'], ['↓', 'присесть'], ['Z или ↑', 'прыжок'], ['C', 'копьё: бросить / вернуть'], ['X', 'выстрел глазом *'], ['↑ + X', 'выстрел вверх, без прыжка *'], ['SHIFT', 'рывок *'], ['↓ в прыжке', 'удар сверху *'], ['V', 'пробуждение глаза *'], ['ESC', 'пауза']];
       rows.forEach(([k, v], i) => { T(k, W / 2 - 154, 118 + i * 11, { color: '#ffe060' }); T(v, W / 2 - 80, 118 + i * 11, { color: '#e8e0ff' }); });
       T('* — способности открываются по ходу игры', W / 2, 233, { align: 'center', color: '#ff9a8a', shadow: false });
     }
@@ -288,7 +292,7 @@ G.UI = (() => {
     for (let i = 0; i < game.stats.maxHp; i++) X.spr(i < p.hp ? 'ui_heart' : 'ui_heart_empty', 6 + i * 10, 6);
     for (let i = 0; i < game.stats.shield; i++) X.spr('ui_shield', 8 + game.stats.maxHp * 10 + i * 9, 6);
     X.spr('hero_life', 12, 30);
-    T('×' + Math.max(0, game.lives), 20, 20, { color: '#ffffff' });
+    T('×' + (G.Save.data.revive ? '∞' : Math.max(0, game.lives)), 20, 20, { color: '#ffffff' });
     // монеты
     X.spr('ui_coin', W - 58, 6);
     T(String(game.coins).padStart(5, '0'), W - 48, 6, { color: '#ffe060' });
@@ -358,9 +362,9 @@ G.UI = (() => {
 
   function drawPause(game) {
     X.rect(0, 0, W, H, 'rgba(6,2,14,0.6)');
-    X.frame(W / 2 - 80, 80, 160, 92);
+    X.frame(W / 2 - 90, 80, 180, 92);
     T('ПАУЗА', W / 2, 90, { align: 'center', scale: 2, color: '#9affc8' });
-    ['ПРОДОЛЖИТЬ', 'С ЧЕКПОИНТА', 'В МЕНЮ'].forEach((s, i) => {
+    ['ПРОДОЛЖИТЬ', 'С ФЛАЖКА', 'ВОСКРЕШЕНИЕ: ' + (G.Save.data.revive ? 'ВКЛ' : 'ВЫКЛ'), 'В МЕНЮ'].forEach((s, i) => {
       const sel = i === game.menu.i;
       T(s, W / 2 - 46, 116 + i * 13, { color: sel ? '#ffe060' : '#d8d0f0' });
       if (sel) cursor(game, W / 2 - 60, 115 + i * 13);
@@ -406,7 +410,7 @@ G.UI = (() => {
     const t = game.stateT, k = Math.min(1, t / 40);
     T('ИГРА ОКОНЧЕНА', W / 2, 70 - (1 - k) * 30, { align: 'center', scale: 2, color: '#ff4a5a', outline: '#200008', alpha: k });
     X.spr('hero_dead1', W / 2, 150);
-    if (t >= 60) ['ПРОДОЛЖИТЬ (½ МОНЕТ)', 'В МЕНЮ'].forEach((s, i) => {
+    if (t >= 60) ['ВОСКРЕСНУТЬ (с флажка)', 'ЗАНОВО ЭТАП (½ МОНЕТ)', 'В МЕНЮ'].forEach((s, i) => {
       const sel = i === game.menu.i;
       T(s, W / 2 - 80, 176 + i * 14, { color: sel ? '#ffe060' : '#a098b8' });
       if (sel) cursor(game, W / 2 - 94, 175 + i * 14);
