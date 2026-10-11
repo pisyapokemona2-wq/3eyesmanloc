@@ -16,10 +16,14 @@ jobs:
         run: |
           mkdir -p .cache && cd .cache
           echo '{"name":"build-cache","version":"1.0.0","private":true}' > package.json
-          npm i resedit@2.0.3
+          npm i resedit@2.0.3 @electron/asar@3.2.17
       - name: Сборка
-        run: node tools/build-exe.js
+        run: node tools/build-exe.js && node tools/build-exe-lite.js
       - uses: actions/upload-artifact@v4
         with:
           name: ThirdEye-win64
           path: dist/ThirdEye-win64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ThirdEye-lite
+          path: dist/ThirdEye-lite/
