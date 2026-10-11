@@ -553,6 +553,12 @@ G.Player = class Player extends G.Entity {
     else if (this.shootAnim > 0 && Math.abs(this.vx) < 0.4) a = this.aimUp ? 'shootUp' : 'shoot';
     else if (Math.abs(this.vx) > 0.3) a = 'run';
     else a = 'idle';
+    // сглаживание: без однокадровых «миганий» позы
+    this.groundT = this.onGround ? (this.groundT || 0) + 1 : 0;
+    const air = this.anim === 'fall' || this.anim === 'jump' || this.anim === 'djump';
+    if (this.onGround && this.groundT < 3 && air && (a === 'run' || a === 'idle')) a = 'fall'; // приземление — 2 кадра позы падения
+    const soft = ['idle', 'run', 'jump', 'fall', 'crouch', 'shoot', 'shootUp'];
+    if (a !== this.anim && soft.includes(a) && soft.includes(this.anim) && this.animT < 3 && !(a === 'jump' && this.vy < -3)) a = this.anim;
     if (a !== this.anim) { this.anim = a; this.animT = 0; }
   }
   frameName() {
