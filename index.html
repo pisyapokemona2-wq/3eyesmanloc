@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Третий Глаз</title>
+  <style>canvas#game{image-rendering:pixelated}</style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -22,6 +23,7 @@
     #touch .j { right: 16px; bottom: 30px; } #touch .s { right: 96px; bottom: 60px; }
     #touch .c { right: 30px; bottom: 112px; width: 52px; height: 52px; }
     #touch .v { right: 110px; bottom: 140px; width: 48px; height: 48px; font-size: 10px; }
+    #touch .f { right: 180px; bottom: 40px; width: 52px; height: 52px; }
     #touch .p { right: 16px; top: 16px; width: 44px; height: 44px; font-size: 10px; }
   </style>
 </head>
@@ -35,9 +37,26 @@
     <div class="b s" data-a="shoot">X</div>
     <div class="b c" data-a="spear">C</div>
     <div class="b v" data-a="special">V</div>
+    <div class="b f" data-a="dash">»</div>
     <div class="b p" data-a="pause">II</div>
   </div>
   <script src="src/core.js"></script>
+  <script src="src/pix.js"></script>
+  <script src="src/art/registry.js"></script>
+  <script src="src/art/hero.js"></script>
+  <script src="src/art/items.js"></script>
+  <script src="src/art/enemies_a.js"></script>
+  <script src="src/art/enemies_b.js"></script>
+  <script src="src/art/bosses_a.js"></script>
+  <script src="src/art/bosses_b.js"></script>
+  <script src="src/art/tiles_city.js"></script>
+  <script src="src/art/tiles_sewer.js"></script>
+  <script src="src/art/tiles_ruins.js"></script>
+  <script src="src/art/tiles_cave.js"></script>
+  <script src="src/art/tiles_ice.js"></script>
+  <script src="src/art/tiles_volcano.js"></script>
+  <script src="src/art/tiles_sky.js"></script>
+  <script src="src/art/tiles_temple.js"></script>
   <script src="src/input.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/gfx.js"></script>
@@ -45,6 +64,7 @@
   <script src="src/levels.js"></script>
   <script src="src/world.js"></script>
   <script src="src/tiles.js"></script>
+  <script src="src/bg_themes.js"></script>
   <script src="src/backgrounds.js"></script>
   <script src="src/entities.js"></script>
   <script src="src/player.js"></script>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>BG preview</title>
+<style>body{margin:0;background:#111} canvas{image-rendering:pixelated;display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script src="../src/pix.js"></script>
+<script src="../src/art/registry.js"></script>
+<script src="../src/art/manifest.js"></script>
+<script src="../src/bg_themes.js"></script>
+<script>
+// ?theme=city&scale=2 — три кадра с разной позицией камеры (0, 700, 1600)
+const q = new URLSearchParams(location.search);
+const theme = q.get('theme') || 'city', scale = +(q.get('scale') || 2);
+const W = 480, H = 270;
+const cv = document.getElementById('c');
+cv.width = W * scale; cv.height = (H + 4) * 3 * scale;
+const out = cv.getContext('2d');
+out.imageSmoothingEnabled = false;
+const T = G.BG_THEMES[theme];
+const layers = T.layers.map((L, i) => {
+  const lw = L.w || W, lh = L.h || H;
+  const c = document.createElement('canvas'); c.width = lw; c.height = lh;
+  const cc = c.getContext('2d');
+  L.draw(cc, lw, lh, G.Pix.rng(1000 + i * 77));
+  return { L, c, lw, lh };
+});
+const sky = document.createElement('canvas'); sky.width = W; sky.height = H;
+T.sky(sky.getContext('2d'), W, H);
+[0, 700, 1600].forEach((camX, k) => {
+  const f = document.createElement('canvas'); f.width = W; f.height = H;
+  const c = f.getContext('2d');
+  c.drawImage(sky, 0, 0);
+  for (const { L, c: lc, lw, lh } of layers) {
+    const ox = -Math.round((camX * L.f) % lw);
+    for (let x = ox; x < W; x += lw) c.drawImage(lc, x, L.y || 0);
+  }
+  if (T.overlay) T.overlay(c, W, H, 1.5, camX);
+  out.drawImage(f, 0, k * (H + 4) * scale, W * scale, H * scale);
+});
+document.title = 'done';
+</script></body></html>

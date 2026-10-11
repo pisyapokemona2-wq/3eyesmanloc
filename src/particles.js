@@ -1,51 +1,41 @@
 'use strict';
-// Частицы: пыль, искры, обломки, кольца, всплывающий текст.
+// Частицы: пиксельные точки, искры, обломки и спрайтовые эффекты (fx_*).
 G.Particles = (() => {
   const list = [];
-  const P = {};
-  P.list = list;
+  const P = { list };
   P.clear = () => (list.length = 0);
-
   P.add = (o) => {
-    const p = Object.assign({
-      x: 0, y: 0, vx: 0, vy: 0, g: 0, drag: 1, life: 30, t: 0, size: 2, size2: null,
-      color: '#fff', color2: null, kind: 'dot', add: false, rot: 0, vr: 0, bounce: false, alpha: 1,
-    }, o);
+    const p = Object.assign({ x: 0, y: 0, vx: 0, vy: 0, g: 0, drag: 1, life: 30, t: 0, size: 1, color: '#fff', kind: 'dot', add: false, bounce: false, layer: 1 }, o);
     p.max = p.life;
     list.push(p);
-    if (list.length > 900) list.shift();
+    if (list.length > 700) list.shift();
     return p;
   };
-
-  P.dust = (x, y, n = 6, color = '#d8c8b0') => {
+  // спрайтовый эффект: анимация fx_* проигрывается один раз
+  P.fx = (anim, x, y, o = {}) => {
+    const a = G.Art.anims[anim];
+    const life = a ? Math.ceil((a.frames.length * 60) / a.fps) : 20;
+    return P.add(Object.assign({ x, y, kind: 'fx', anim, life }, o));
+  };
+  P.dust = (x, y, n = 3) => {
+    P.fx('fx_puff', x, y - 3, { vy: -0.2 });
+    for (let i = 0; i < n; i++) P.add({ x: x + G.rand(-5, 5), y: y - 1, vx: G.rand(-0.6, 0.6), vy: G.rand(-0.8, -0.2), drag: 0.9, life: G.randi(10, 18), color: '#d8ccbc' });
+  };
+  P.sparks = (x, y, n = 6, color = '#ffe070', speed = 2.2) => {
     for (let i = 0; i < n; i++) {
-      P.add({ x: x + G.rand(-6, 6), y: y - G.rand(0, 3), vx: G.rand(-1, 1), vy: G.rand(-0.9, -0.1), drag: 0.92, life: G.randi(18, 30), size: G.rand(2, 4), size2: 0.5, color, alpha: 0.7, kind: 'puff' });
+      const a = Math.random() * Math.PI * 2, s = G.rand(0.4, 1) * speed;
+      P.add({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, drag: 0.9, life: G.randi(10, 20), color, kind: 'spark', add: true });
     }
   };
-  P.sparks = (x, y, n = 8, color = '#ffe070', speed = 3) => {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, s = G.rand(0.5, 1) * speed;
-      P.add({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, drag: 0.9, life: G.randi(12, 22), size: G.rand(1, 2.2), color, add: true, kind: 'spark' });
-    }
+  P.debris = (x, y, n, colors, speed = 2) => {
+    for (let i = 0; i < n; i++) P.add({ x: x + G.rand(-4, 4), y: y + G.rand(-4, 4), vx: G.rand(-1, 1) * speed, vy: G.rand(-1.6, -0.4) * speed, g: 0.2, life: G.randi(30, 50), size: G.randi(1, 3), color: G.pick(colors), kind: 'chunk', bounce: true });
   };
-  P.debris = (x, y, n, colors, speed = 3) => {
-    for (let i = 0; i < n; i++) {
-      P.add({ x: x + G.rand(-4, 4), y: y + G.rand(-4, 4), vx: G.rand(-1, 1) * speed, vy: G.rand(-1.5, -0.3) * speed, g: 0.25, life: G.randi(30, 60), size: G.rand(2, 4), color: G.pick(colors), kind: 'chunk', rot: G.rand(6), vr: G.rand(-0.3, 0.3) });
-    }
+  P.explosion = (x, y, big = false) => {
+    P.fx('fx_explode', x, y);
+    if (big) { P.fx('fx_explode', x + G.rand(-10, 10), y + G.rand(-10, 10)); P.fx('fx_ring', x, y); }
+    P.sparks(x, y, big ? 14 : 8, '#ffd070', big ? 3 : 2.2);
   };
-  P.ring = (x, y, color = '#fff', r = 16, life = 18) => P.add({ x, y, life, size: 1, size2: r, color, kind: 'ring', add: true });
-  P.explosion = (x, y, scale = 1) => {
-    P.ring(x, y, '#fff2c0', 26 * scale, 16);
-    for (let i = 0; i < 14 * scale; i++) {
-      const a = Math.random() * Math.PI * 2, s = G.rand(0.5, 3) * scale;
-      P.add({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, drag: 0.88, life: G.randi(18, 34), size: G.rand(4, 9) * scale, size2: 0, color: G.pick(['#fff3b0', '#ffb040', '#ff6020']), color2: '#5a3a3a', kind: 'fire', add: true });
-    }
-    for (let i = 0; i < 6 * scale; i++) {
-      P.add({ x: x + G.rand(-8, 8) * scale, y: y + G.rand(-8, 8) * scale, vx: G.rand(-0.6, 0.6), vy: G.rand(-1, -0.3), drag: 0.95, life: G.randi(30, 50), size: G.rand(4, 8) * scale, size2: 12 * scale, color: '#3a3040', alpha: 0.5, kind: 'puff' });
-    }
-    P.sparks(x, y, 10 * scale, '#ffe080', 4 * scale);
-  };
-  P.text = (x, y, str, color = '#fff', size = 8) => P.add({ x, y, vy: -0.7, drag: 0.96, life: 50, str, color, size, kind: 'text' });
+  P.text = (x, y, str, color = '#ffffff') => P.add({ x, y, vy: -0.5, drag: 0.96, life: 45, str, color, kind: 'text', layer: 2 });
 
   P.update = (level) => {
     for (let i = list.length - 1; i >= 0; i--) {
@@ -56,56 +46,42 @@ G.Particles = (() => {
       p.vy *= p.drag;
       p.x += p.vx;
       p.y += p.vy;
-      p.rot += p.vr;
-      if (p.kind === 'chunk' && level && p.vy > 0 && level.solidAt(p.x, p.y)) {
-        p.y -= p.vy;
-        p.vy *= -0.4;
-        p.vx *= 0.7;
-      }
+      if (p.bounce && level && p.vy > 0 && level.solidAt(p.x, p.y)) { p.y -= p.vy; p.vy *= -0.35; p.vx *= 0.6; }
       if (p.t >= p.max) list.splice(i, 1);
     }
   };
 
-  P.draw = (c, layer = 0) => {
+  P.draw = (c, layer = 1) => {
     for (const p of list) {
-      if ((p.layer || 0) !== layer) continue;
+      if (p.layer !== layer) continue;
       const k = p.t / p.max;
-      const size = p.size2 === null ? p.size : G.lerp(p.size, p.size2, k);
-      const a = p.alpha * (p.kind === 'ring' || p.kind === 'text' ? 1 - k * k : 1 - k);
-      c.globalAlpha = Math.max(0, a);
-      c.globalCompositeOperation = p.add ? 'lighter' : 'source-over';
-      const col = p.color2 && k > 0.5 ? p.color2 : p.color;
-      switch (p.kind) {
-        case 'ring':
-          c.strokeStyle = col;
-          c.lineWidth = 2 * (1 - k) + 0.5;
-          c.beginPath(); c.arc(p.x, p.y, size, 0, Math.PI * 2); c.stroke();
-          break;
-        case 'chunk':
-          c.save();
-          c.translate(p.x, p.y); c.rotate(p.rot);
-          c.fillStyle = col; c.fillRect(-size / 2, -size / 2, size, size);
-          c.restore();
-          break;
-        case 'text':
-          c.globalCompositeOperation = 'source-over';
-          c.globalAlpha = 1;
-          G.Gfx.ctx.save();
-          G.Gfx.text(p.str, p.x, p.y, { size: p.size, color: p.color, align: 'center', alpha: Math.max(0, a), shadow: false });
-          G.Gfx.ctx.restore();
-          break;
-        case 'spark':
-          c.strokeStyle = col;
-          c.lineWidth = size;
-          c.lineCap = 'round';
-          c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - p.vx * 1.5, p.y - p.vy * 1.5); c.stroke();
-          break;
-        default:
-          c.fillStyle = col;
-          c.beginPath(); c.arc(p.x, p.y, Math.max(0.1, size / 2), 0, Math.PI * 2); c.fill();
+      if (p.kind === 'fx') {
+        if (p.add) c.globalCompositeOperation = 'lighter';
+        G.Art.has(G.Art.frame(p.anim, p.t)) && G.Art.draw(c, G.Art.frame(p.anim, p.t), p.x, p.y, !!p.flip);
+        c.globalCompositeOperation = 'source-over';
+        continue;
       }
+      if (p.kind === 'spr') {
+        c.globalAlpha = (1 - k) * 0.45;
+        c.globalCompositeOperation = 'lighter';
+        G.Art.draw(c, p.name, p.x, p.y, p.flip);
+        c.globalCompositeOperation = 'source-over';
+        c.globalAlpha = 1;
+        continue;
+      }
+      if (p.kind === 'text') {
+        if (k > 0.7 && p.t % 4 < 2) continue;
+        G.Gfx.text(p.str, p.x, p.y, { align: 'center', color: p.color });
+        continue;
+      }
+      // мерцание в конце жизни
+      if (k > 0.75 && p.t % 3 === 0) continue;
+      c.globalCompositeOperation = p.add ? 'lighter' : 'source-over';
+      c.fillStyle = p.color;
+      const s = p.kind === 'spark' && k < 0.4 ? 2 : p.size;
+      c.fillRect(Math.round(p.x), Math.round(p.y), s, s);
+      if (p.kind === 'spark' && k < 0.5) c.fillRect(Math.round(p.x - p.vx), Math.round(p.y - p.vy), 1, 1);
     }
-    c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
   };
   return P;

@@ -104,6 +104,9 @@ G.Audio = (() => {
     lava: () => { noise({ dur: 0.4, vol: 0.3, f: 600, f2: 3000 }); tone({ type: 'sawtooth', f: 300, f2: 900, dur: 0.3, vol: 0.12 }); },
     die: () => [784, 698, 622, 523, 466, 392, 330, 262].forEach((f, i) => tone({ type: 'square', f, dur: 0.12, vol: 0.15, at: i * 0.1 })),
     teleport: () => { tone({ type: 'sine', f: 1500, f2: 200, dur: 0.3, vol: 0.15 }); tone({ type: 'sine', f: 1000, f2: 3000, dur: 0.3, vol: 0.1 }); },
+    ability: () => [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => { tone({ type: 'square', f, dur: 0.18, vol: 0.12, at: i * 0.09 }); tone({ type: 'triangle', f: f / 2, dur: 0.2, vol: 0.15, at: i * 0.09 }); }),
+    dash: () => { noise({ dur: 0.15, vol: 0.2, f: 3000, f2: 600, type: 'bandpass', q: 1.5 }); tone({ type: 'sine', f: 600, f2: 200, dur: 0.12, vol: 0.12 }); },
+    pound: () => { tone({ type: 'sawtooth', f: 900, f2: 120, dur: 0.25, vol: 0.15 }); },
     laser: () => { tone({ type: 'sawtooth', f: 80, f2: 120, dur: 1.2, vol: 0.18, curve: 'lin' }); noise({ dur: 1.2, vol: 0.12, f: 3000, f2: 2000, type: 'bandpass', q: 3 }); },
   };
   let lastPlay = {};
@@ -179,6 +182,32 @@ G.Audio = (() => {
         { w: 'triangle', v: 0.3, n: P(rep('B1 - B2 - F#2 - B2 -', 2) + ' ' + rep('G1 - G2 - D2 - G2 -', 2) + ' ' + rep('E2 - E3 - B2 - E3 -', 2) + ' ' + rep('F#1 - F#2 - C#2 - F#2 -', 2)) },
         { w: 'square', v: 0.04, n: P(rep('F#4 B4 D5 B4', 4) + ' ' + rep('D4 G4 B4 G4', 4) + ' ' + rep('E4 G4 B4 G4', 4) + ' ' + rep('C#4 F#4 A#4 F#4', 4)) },
         { w: 'drum', v: 0.45, n: P(rep('k . h . s . h . k . h k s . h h', 4)) },
+      ],
+    },
+    sewer: {
+      bpm: 126,
+      ch: [
+        { w: 'square', v: 0.11, n: P('E4 - . E4 G4 - A4 - . . A#4 - A4 - G4 - E4 - . E4 G4 - A4 - . . D5 - C5 - A4 - E4 - . E4 G4 - A4 - . . A#4 - A4 - G4 - E5 - D5 - C5 - A4 - G4 - E4 - - - - - - -') },
+        { w: 'triangle', v: 0.32, n: P(rep('E2 . E2 . G2 . E2 A2', 4) + ' ' + rep('C2 . C2 . D2 . C2 D2', 2) + ' ' + rep('E2 . E2 . G2 . B1 D2', 2)) },
+        { w: 'drum', v: 0.45, n: P(rep('k . h k s . h . k k h . s . h h', 4)) },
+      ],
+    },
+    ice: {
+      bpm: 112,
+      ch: [
+        { w: 'triangle', v: 0.24, n: P('A5 - - - E5 - - - C6 - B5 - A5 - E5 - F5 - - - E5 - D5 - E5 - - - - - - - A5 - - - E5 - - - C6 - D6 - E6 - C6 - B5 - - - G5 - A5 - - - - - - -') },
+        { w: 'square', v: 0.05, n: P(rep('A4 C5 E5 C5', 4) + ' ' + rep('F4 A4 C5 A4', 2) + ' ' + rep('G4 B4 D5 B4', 2) + ' ' + rep('A4 C5 E5 C5', 4) + ' ' + rep('E4 G#4 B4 G#4', 4)) },
+        { w: 'triangle', v: 0.28, n: P(rep('A2 - - - A2 - E2 -', 2) + ' ' + rep('F2 - - - G2 - - -', 1) + ' ' + rep('A2 - - - A2 - E2 -', 2) + ' ' + rep('E2 - - - E2 - B1 -', 2)) },
+        { w: 'drum', v: 0.35, n: P(rep('k . . h s . . h k . h . s . h .', 4)) },
+      ],
+    },
+    sky: {
+      bpm: 132,
+      ch: [
+        { w: 'square', v: 0.11, n: P('G5 - D5 - G5 - A5 - B5 - - - A5 - G5 - E5 - - - D5 - E5 - G5 - - - - - C6 - B5 - A5 - G5 - A5 - B5 - D6 - - - B5 - A5 - G5 - - - - - - -') },
+        { w: 'square', v: 0.05, n: P(rep('G4 B4 D5 B4', 4) + ' ' + rep('C4 E4 G4 E4', 4) + ' ' + rep('A3 C4 E4 C4', 4) + ' ' + rep('D4 F#4 A4 F#4', 4)) },
+        { w: 'triangle', v: 0.3, n: P(rep('G2 - G3 - D3 - G3 -', 2) + ' ' + rep('C2 - C3 - G2 - C3 -', 2) + ' ' + rep('A1 - A2 - E2 - A2 -', 2) + ' ' + rep('D2 - D3 - A2 - D3 -', 2)) },
+        { w: 'drum', v: 0.45, n: P(rep('k . h . s . h k k . h . s h h h', 4)) },
       ],
     },
     boss: {

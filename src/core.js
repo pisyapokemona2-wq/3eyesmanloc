@@ -1,11 +1,11 @@
 'use strict';
 // Общие константы и утилиты. Все модули живут в глобальном пространстве имён G,
 // чтобы игра запускалась прямо из файла (file://) без сборщика и сервера.
-const G = (window.G = {});
+const G = (window.G = window.G || {});
 
-G.TILE = 16;      // размер тайла в мировых единицах
-G.W = 640;        // логическая ширина экрана
-G.H = 360;        // логическая высота экрана
+G.TILE = 16;      // размер тайла в пикселях
+G.W = 480;        // внутреннее разрешение (на 1080p — ровно ×4)
+G.H = 270;
 G.STEP = 1 / 60;  // фиксированный шаг симуляции
 
 G.clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -59,10 +59,10 @@ G.rgba = (c, a) => {
 
 // Сохранение прогресса и настроек
 G.Save = {
-  key: 'third-eye-save-v1',
+  key: 'third-eye-save-v2',
   data: null,
   defaults() {
-    return { unlocked: 1, bestCoins: 0, cleared: false, music: 0.6, sfx: 0.8, shake: true };
+    return { unlocked: 1, bestCoins: 0, cleared: false, music: 0.6, sfx: 0.8, shake: true, secrets: {} };
   },
   load() {
     try {

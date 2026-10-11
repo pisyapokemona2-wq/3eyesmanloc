@@ -1,7 +1,5 @@
 'use strict';
-// Враги. Каждый — отдельный класс с поведением и векторной анимацией.
-const EO = '#160e1c'; // контур
-
+// Враги на спрайтах. Каждый класс — поведение + имя анимации.
 G.Enemy = class Enemy extends G.Entity {
   constructor(x, y, w, h, hp) {
     super(x - w / 2, y - h, w, h);
@@ -14,429 +12,414 @@ G.Enemy = class Enemy extends G.Entity {
     this.facing = -1;
     this.active = false;
     this.meter = 10;
+    this.alpha = 1;
   }
   hitTest(b) { return G.overlap(this, b); }
   hurt(d, game, src) {
     if (this.dead) return;
+    if (this.guard && this.guard(src)) return;
     this.hp -= d;
-    this.flash = 7;
-    if (src && src.vx) this.vx += Math.sign(src.vx) * 0.8;
+    this.flash = 6;
+    if (src && src.vx) this.vx += Math.sign(src.vx) * 0.6;
     G.Audio.play('hit');
-    if (this.hp <= 0) this.die(game);
-    else game.hitstop(1);
+    if (this.hp <= 0) this.die(game); else game.hitstop(1);
   }
   die(game) {
     this.dead = true;
     G.Audio.play('kill');
-    G.Particles.explosion(this.cx, this.cy, 0.7);
+    G.Particles.explosion(this.cx, this.cy);
     game.shake(2, 6);
     game.hitstop(3);
     game.dropCoins(this.cx, this.cy, this.coins);
     game.onEnemyKilled(this);
   }
-  // общий шаг: активируемся рядом с камерой
   wake(game) {
     if (!this.active) {
-      if (this.x < game.cam.x + G.W + 40 && this.x + this.w > game.cam.x - 40) this.active = true;
-      else return false;
+      if (this.onScreen(game, 30)) this.active = true; else return false;
     }
     if (this.flash > 0) this.flash--;
     return true;
   }
   touchPlayer(game) {
     const p = game.player;
-    if (!p || !p.alive || this.dead) return;
-    if (!G.overlap(this, p)) return;
-    // прыжок сверху
+    if (!p || !p.alive || this.dead || !G.overlap(this, p)) return;
+    if (p.pounding) { this.hurt(4, game, null); p.vy = -5; p.pounding = false; return; }
     if (this.stompable && p.vy > 0.5 && p.bottom - p.vy <= this.y + 6) {
-      p.vy = G.Input.down('jump') ? -8 : -5.5;
+      p.vy = G.Input.down('jump') ? -7.2 : -5;
       p.jumpHeld = G.Input.down('jump');
+      p.airJumps = 0; p.canDash = true;
       G.Audio.play('stomp');
-      G.Particles.ring(p.cx, p.bottom, '#ffffff', 10, 10);
+      G.Particles.fx('fx_hit', p.cx, p.bottom);
       this.hurt(2, game, null);
       return;
     }
-    if (game.eyeMode > 0) { this.hurt(3, game, { vx: p.facing }); return; }
+    if (game.eyeMode > 0 || p.dashT > 0) { if (game.eyeMode > 0) this.hurt(3, game, { vx: p.facing }); return; }
     p.hurt(this.dmg, game, this.cx);
   }
-  // мигание белым при попадании
-  flashDraw(c, fn) {
-    fn();
-    if (this.flash > 0) {
-      c.save();
-      c.globalCompositeOperation = 'lighter';
-      c.globalAlpha = this.flash / 7;
-      fn();
-      c.restore();
-    }
-  }
-};
-
-// --- Бесёнок: ходит туда-сюда ---------------------------------------------------
-G.Imp = class Imp extends G.Enemy {
-  constructor(x, y) { super(x, y, 14, 15, 2); this.speed = 0.7; this.coins = 2; }
-  update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
+  walk(game, speed, turnAtEdges = true) {
     const L = game.level;
-    this.vx = G.approach(this.vx, this.facing * this.speed, 0.1);
-    this.vy = Math.min(this.vy + 0.4, 6);
+    this.vx = G.approach(this.vx, this.facing * speed, 0.1);
+    this.vy = Math.min(this.vy + 0.35, 5.5);
     G.Physics.step(this, L);
-    if (this.hitL || this.hitR || (this.onGround && !G.Physics.groundAhead(this, L, this.facing))) this.facing *= -1;
+    if (this.hitL || this.hitR || (turnAtEdges && this.onGround && !G.Physics.groundAhead(this, L, this.facing))) { this.facing *= -1; this.vx = 0; }
     if (this.y > L.h * 16) this.dead = true;
-    this.touchPlayer(game);
   }
+  sprite() { return 'e_imp_walk0'; }
   draw(c) {
-    this.flashDraw(c, () => {
-      const x = this.cx, b = this.bottom, t = this.t;
-      const step = Math.sin(t * 0.25);
-      c.save();
-      c.translate(x, b);
-      c.scale(this.facing, 1);
-      // ножки
-      G.Gfx.limb(c, -3, -4, -3 + step * 2, 0, 2.6, '#7a1a3a', EO);
-      G.Gfx.limb(c, 3, -4, 3 - step * 2, 0, 2.6, '#7a1a3a', EO);
-      // хвост
-      c.strokeStyle = EO; c.lineWidth = 2.2;
-      c.beginPath(); c.moveTo(-5, -6); c.quadraticCurveTo(-11, -8 + step, -9, -13); c.stroke();
-      c.strokeStyle = '#c0305a'; c.lineWidth = 1.2; c.stroke();
-      c.fillStyle = '#c0305a'; c.beginPath(); c.moveTo(-9, -15); c.lineTo(-11, -12); c.lineTo(-7.5, -12.5); c.fill();
-      // тело
-      const by = Math.abs(step) * -1;
-      G.Gfx.ellipse(c, 0, -9 + by, 7, 6.5, 0, '#d83a6a', EO, 1);
-      G.Gfx.ellipse(c, 1, -7.5 + by, 4.5, 3.5, 0, '#f07a9a');
-      // рожки
-      c.fillStyle = '#ffe0a0'; c.strokeStyle = EO; c.lineWidth = 0.8;
-      for (const s of [-1, 1]) { c.beginPath(); c.moveTo(s * 2.5 + 1, -14.5 + by); c.lineTo(s * 4.5 + 1, -19 + by); c.lineTo(s * 5 + 1, -13.5 + by); c.fill(); c.stroke(); }
-      // глаз
-      G.Gfx.ellipse(c, 3, -10 + by, 2.6, 2.8, 0, '#fff', EO, 0.7);
-      G.Gfx.circle(c, 3.8, -10 + by, 1.3, '#200810');
-      // клыки
-      c.fillStyle = '#fff';
-      c.beginPath(); c.moveTo(2, -6 + by); c.lineTo(3, -4.2 + by); c.lineTo(4, -6 + by); c.fill();
-      c.restore();
-    });
+    const pa = c.globalAlpha;
+    c.globalAlpha = pa * this.alpha;
+    G.Gfx.spr(this.sprite(), Math.round(this.cx), Math.round(this.bottom), this.facing < 0, this.flash > 0 && this.flash % 2 === 0);
+    c.globalAlpha = pa;
   }
-};
-
-// --- Летучая мышь: висит, потом пикирует к игроку ------------------------------
-G.Bat = class Bat extends G.Enemy {
-  constructor(x, y) { super(x, y - 2, 14, 10, 1); this.state = 'hang'; this.home = { x: this.x, y: this.y }; this.coins = 1; this.stompable = true; }
-  update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
+  playerDist(game) { const p = game.player; return p ? G.dist(p.cx, p.cy, this.cx, this.cy) : 9999; }
+  aimAt(game, x, y, speed, kind, spread = 0, opts) {
     const p = game.player;
-    if (this.state === 'hang') {
-      if (p && p.alive && Math.abs(p.cx - this.cx) < 110 && p.cy > this.cy - 20) { this.state = 'swoop'; this.t = 0; G.Audio.play('enemyShot'); }
-    } else {
-      const tx = p ? p.cx : this.cx, ty = p ? p.cy - 6 : this.cy;
-      const dx = tx - this.cx, dy = ty - this.cy;
-      const d = Math.hypot(dx, dy) || 1;
-      this.vx = G.lerp(this.vx, (dx / d) * 1.7, 0.04);
-      this.vy = G.lerp(this.vy, (dy / d) * 1.7 + Math.sin(this.t * 0.15) * 1.2, 0.06);
-      this.x += this.vx;
-      this.y += this.vy;
-      this.facing = this.vx > 0 ? 1 : -1;
-    }
-    this.touchPlayer(game);
-  }
-  draw(c) {
-    this.flashDraw(c, () => {
-      const x = this.cx, y = this.cy;
-      c.save();
-      c.translate(x, y);
-      if (this.state === 'hang') {
-        // висит вниз головой, завернувшись в крылья
-        const sw = Math.sin(this.t * 0.05) * 0.1;
-        c.rotate(sw);
-        G.Gfx.ellipse(c, 0, 0, 5, 6.5, 0, '#4a2a6a', EO, 1);
-        c.strokeStyle = EO; c.lineWidth = 0.8;
-        c.beginPath(); c.moveTo(-2, -6); c.lineTo(-2, -9); c.moveTo(2, -6); c.lineTo(2, -9); c.stroke();
-        G.Gfx.circle(c, -1.8, 2.5, 1, '#ffd040');
-        G.Gfx.circle(c, 1.8, 2.5, 1, '#ffd040');
-      } else {
-        c.scale(this.facing, 1);
-        const f = Math.sin(this.t * 0.6);
-        c.fillStyle = '#5a2a7a'; c.strokeStyle = EO; c.lineWidth = 0.9;
-        for (const s of [-1, 1]) {
-          c.beginPath();
-          c.moveTo(s * 3, -1);
-          c.quadraticCurveTo(s * 9, -8 * f - 2, s * 13, -3 * f);
-          c.lineTo(s * 10, 1); c.lineTo(s * 8, -0.5); c.lineTo(s * 6, 2);
-          c.closePath(); c.fill(); c.stroke();
-        }
-        G.Gfx.ellipse(c, 0, 0, 5, 4.5, 0, '#6a3a8a', EO, 1);
-        c.fillStyle = '#6a3a8a';
-        c.beginPath(); c.moveTo(-3, -3); c.lineTo(-2.5, -7); c.lineTo(-0.8, -3.8); c.moveTo(3, -3); c.lineTo(2.5, -7); c.lineTo(0.8, -3.8); c.fill();
-        G.Gfx.circle(c, 1.8, -0.5, 1.4, '#ffe040');
-        G.Gfx.circle(c, 2.2, -0.5, 0.6, '#300');
-        c.fillStyle = '#fff'; c.fillRect(0.4, 1.8, 0.8, 1.4); c.fillRect(2.2, 1.8, 0.8, 1.4);
-      }
-      c.restore();
-    });
+    const a = Math.atan2(p.cy - y, p.cx - x) + spread;
+    game.spawn(new G.EnemyShot(x, y, Math.cos(a) * speed, Math.sin(a) * speed, kind, opts));
   }
 };
+const EA = (a, t) => G.Art.frame(a, t);
 
-// --- Лягушка: прыгает в сторону игрока -----------------------------------------
-G.Frog = class Frog extends G.Enemy {
-  constructor(x, y) { super(x, y, 16, 12, 3); this.cool = G.randi(40, 90); this.coins = 3; }
+G.Imp = class Imp extends G.Enemy {
+  constructor(x, y) { super(x, y, 12, 14, 2); }
+  update(game) { this.t++; if (!this.wake(game)) return; this.walk(game, 0.6); this.touchPlayer(game); }
+  sprite() { return EA('e_imp_walk', this.t); }
+};
+
+G.Rat = class Rat extends G.Enemy {
+  constructor(x, y) { super(x, y, 16, 10, 2); this.coins = 2; }
   update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
-    const L = game.level, p = game.player;
-    this.vy = Math.min(this.vy + 0.35, 6);
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    const sp = p && Math.abs(p.cy - this.cy) < 24 && Math.abs(p.cx - this.cx) < 120 && Math.sign(p.cx - this.cx) === this.facing ? 1.8 : 1.1;
+    this.walk(game, sp); this.touchPlayer(game);
+  }
+  sprite() { return EA('e_rat_run', this.t); }
+};
+
+G.Frog = class Frog extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 12, 3); this.cool = G.randi(40, 90); this.coins = 3; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    this.vy = Math.min(this.vy + 0.32, 5.5);
     if (this.onGround) {
       this.vx *= 0.7;
       if (p) this.facing = p.cx < this.cx ? -1 : 1;
-      if (--this.cool <= 0) {
-        this.vy = -6.2;
-        this.vx = this.facing * 2.1;
-        this.cool = G.randi(60, 100);
-        G.Particles.dust(this.cx, this.bottom, 3, '#9ad070');
-      }
+      if (--this.cool <= 0) { this.vy = -5.6; this.vx = this.facing * 1.8; this.cool = G.randi(60, 100); G.Particles.dust(this.cx, this.bottom, 1); }
     }
-    G.Physics.step(this, L);
+    G.Physics.step(this, game.level);
     if (this.hitL || this.hitR) this.vx *= -1;
-    if (this.y > L.h * 16) this.dead = true;
+    if (this.y > game.level.h * 16) this.dead = true;
     this.touchPlayer(game);
   }
-  draw(c) {
-    this.flashDraw(c, () => {
-      const x = this.cx, b = this.bottom;
-      const air = !this.onGround;
-      const crouch = this.onGround && this.cool < 12 ? 1 - this.cool / 12 : 0;
-      c.save();
-      c.translate(x, b);
-      c.scale(this.facing, 1 - crouch * 0.2);
-      // задние лапы
-      if (air) { G.Gfx.limb3(c, -4, -5, -8, -1, -11, 2, 2.6, '#3a9a3a', EO); }
-      else { G.Gfx.limb3(c, -4, -4, -8, -6, -7, 0, 2.8, '#3a9a3a', EO); }
-      G.Gfx.ellipse(c, 0, -6, 8, 6, 0, '#4ab84a', EO, 1);
-      G.Gfx.ellipse(c, 1, -3.5, 5.5, 3, 0, '#c8f0a0');
-      // пятна
-      G.Gfx.circle(c, -3, -9, 1.3, '#2a7a2a'); G.Gfx.circle(c, 0, -10.5, 1, '#2a7a2a');
-      // передняя лапа
-      G.Gfx.limb(c, 4, -3, air ? 7 : 5, 0, 2.2, '#3a9a3a', EO);
-      // глаза-шарики
-      G.Gfx.circle(c, 2.5, -11.5, 2.8, '#4ab84a', EO, 0.9);
-      G.Gfx.circle(c, 6, -10.5, 2.6, '#4ab84a', EO, 0.9);
-      G.Gfx.circle(c, 3, -11.8, 1.8, '#fff'); G.Gfx.circle(c, 3.5, -11.8, 0.9, '#100');
-      G.Gfx.circle(c, 6.4, -10.8, 1.6, '#fff'); G.Gfx.circle(c, 6.9, -10.8, 0.8, '#100');
-      c.strokeStyle = EO; c.lineWidth = 0.8;
-      c.beginPath(); c.moveTo(3, -6); c.quadraticCurveTo(6, -4, 8, -6.5); c.stroke();
-      c.restore();
-    });
-  }
+  sprite() { return this.onGround ? 'e_frog_idle0' : 'e_frog_jump0'; }
 };
 
-// --- Каменная голова: стреляет огнём ----------------------------------------------
-G.StoneHead = class StoneHead extends G.Enemy {
-  constructor(x, y) { super(x, y, 18, 18, 5); this.cool = 90; this.stompable = false; this.coins = 4; this.open = 0; this.meter = 15; }
+G.Hedgehog = class Hedgehog extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 12, 3); this.stompable = false; this.roll = 0; this.coins = 3; }
   update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (this.roll > 0) this.roll--;
+    else if (p && Math.abs(p.cx - this.cx) < 100 && Math.abs(p.cy - this.cy) < 24 && this.t % 150 === 0) { this.facing = p.cx < this.cx ? -1 : 1; this.roll = 70; }
+    this.walk(game, this.roll > 0 ? 2.3 : 0.5);
+    this.touchPlayer(game);
+  }
+  sprite() { return this.roll > 0 ? EA('e_hedgehog_roll', this.t) : EA('e_hedgehog_walk', this.t); }
+};
+
+G.StoneHead = class StoneHead extends G.Enemy {
+  constructor(x, y) { super(x, y, 16, 16, 5); this.cool = 90; this.stompable = false; this.coins = 4; this.meter = 15; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
     const p = game.player;
     if (p) this.facing = p.cx < this.cx ? -1 : 1;
-    this.open = G.approach(this.open, this.cool < 20 ? 1 : 0, 0.1);
-    if (p && p.alive && Math.abs(p.cx - this.cx) < 300 && --this.cool <= 0) {
+    if (p && p.alive && Math.abs(p.cx - this.cx) < 240 && --this.cool <= 0) {
       this.cool = 110;
-      const dx = p.cx - this.cx, dy = p.cy - this.cy;
-      const d = Math.hypot(dx, dy) || 1;
-      game.spawn(new G.EnemyShot(this.cx + this.facing * 6, this.cy + 2, (dx / d) * 2.6, (dy / d) * 2.6, 'fire'));
+      this.aimAt(game, this.cx + this.facing * 6, this.cy, 2.2, 'fire');
       G.Audio.play('enemyShot');
     }
     this.touchPlayer(game);
   }
-  draw(c, game) {
-    this.flashDraw(c, () => {
-      const x = this.cx, b = this.bottom;
-      const P = G.Tiles.pal(game.level.theme);
-      c.save();
-      c.translate(x, b);
-      c.scale(this.facing, 1);
-      c.fillStyle = G.shade(P.light, -0.1);
-      G.Gfx.rr(c, -9, -18, 18, 18, 3); c.fill();
-      c.strokeStyle = EO; c.lineWidth = 1; c.stroke();
-      c.fillStyle = P.dark; c.fillRect(-9, -3, 18, 3);
-      c.fillStyle = G.shade(P.light, 0.25); c.fillRect(-7, -17, 12, 1.5);
-      // брови и глаза
-      c.fillStyle = P.dark; c.fillRect(-6, -14, 5, 2); c.fillRect(2, -14, 5, 2);
-      const glow = 0.5 + this.open * 0.5;
-      G.Gfx.glow(c, 3.5, -10.5, 6, '#ff6020', glow * 0.6);
-      G.Gfx.circle(c, -3.5, -10.5, 1.6, G.mix('#5a1a0a', '#ffb040', glow));
-      G.Gfx.circle(c, 4.5, -10.5, 1.6, G.mix('#5a1a0a', '#ffb040', glow));
-      // рот
-      c.fillStyle = '#1a0a08';
-      c.fillRect(-1, -7, 8, 1.5 + this.open * 3);
-      if (this.open > 0.5) G.Gfx.glow(c, 3, -5, 6, '#ff8030', 0.8);
-      c.restore();
-    });
-  }
+  sprite() { return this.cool < 20 ? 'e_head_fire0' : 'e_head_idle0'; }
 };
 
-// --- Ёж: колючий, прыгать сверху нельзя -----------------------------------------
-G.Hedgehog = class Hedgehog extends G.Enemy {
-  constructor(x, y) { super(x, y, 16, 12, 3); this.stompable = false; this.speed = 0.55; this.roll = 0; this.coins = 3; }
+G.Slime = class Slime extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 9, 2); this.coins = 1; }
   update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
-    const L = game.level, p = game.player;
-    // иногда сворачивается в шар и катится
-    if (this.roll > 0) {
-      this.roll--;
-      this.vx = G.approach(this.vx, this.facing * 2.6, 0.15);
-    } else {
-      this.vx = G.approach(this.vx, this.facing * this.speed, 0.1);
-      if (p && Math.abs(p.cx - this.cx) < 120 && Math.abs(p.cy - this.cy) < 30 && this.t % 160 === 0) {
-        this.facing = p.cx < this.cx ? -1 : 1;
-        this.roll = 70;
-      }
-    }
-    this.vy = Math.min(this.vy + 0.4, 6);
-    G.Physics.step(this, L);
-    if (this.hitL || this.hitR || (this.onGround && !G.Physics.groundAhead(this, L, this.facing))) { this.facing *= -1; this.vx = 0; }
-    if (this.y > L.h * 16) this.dead = true;
+    this.t++; if (!this.wake(game)) return;
+    this.walk(game, 0.35);
+    if (this.flash === 5 && this.onGround) this.vy = -3;
     this.touchPlayer(game);
   }
-  draw(c) {
-    this.flashDraw(c, () => {
-      const x = this.cx, b = this.bottom;
-      c.save();
-      c.translate(x, b - 6);
-      c.scale(this.facing, 1);
-      if (this.roll > 0) c.rotate(this.t * 0.5 * this.facing);
-      // иглы
-      c.fillStyle = '#5a3a2a'; c.strokeStyle = EO; c.lineWidth = 0.8;
-      c.beginPath();
-      const n = 11;
-      for (let i = 0; i <= n; i++) {
-        const a = this.roll > 0 ? (i / n) * Math.PI * 2 : Math.PI + (i / n) * Math.PI;
-        const r1 = 6.5, r2 = 10.5;
-        c.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
-        c.lineTo(Math.cos(a + 0.14) * r2, Math.sin(a + 0.14) * r2);
-      }
-      c.closePath(); c.fill(); c.stroke();
-      G.Gfx.ellipse(c, 0, 0, 7.5, 6, 0, '#8a5a3a', EO, 0.9);
-      if (this.roll <= 0) {
-        G.Gfx.ellipse(c, 5, 2, 4, 3.5, 0, '#e8c098', EO, 0.8);
-        G.Gfx.circle(c, 8.6, 1.4, 1, '#200');
-        G.Gfx.circle(c, 5, 0, 1, '#100');
-        const st = Math.sin(this.t * 0.3) * 1.5;
-        G.Gfx.limb(c, -3, 4, -3 + st, 6, 2, '#5a3a2a', EO);
-        G.Gfx.limb(c, 3, 4, 3 - st, 6, 2, '#5a3a2a', EO);
-      }
-      c.restore();
-    });
-  }
+  sprite() { return EA('e_slime_crawl', this.t); }
 };
 
-// --- Призрак: летит сквозь стены ---------------------------------------------------
-G.Ghost = class Ghost extends G.Enemy {
-  constructor(x, y) { super(x, y, 16, 18, 2); this.coins = 3; this.alpha = 0.85; this.baseY = this.y; }
+G.Yeti = class Yeti extends G.Enemy {
+  constructor(x, y) { super(x, y, 20, 26, 8); this.cool = 100; this.coins = 6; this.meter = 20; this.throwT = 0; }
   update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (this.throwT > 0) {
+      this.throwT--;
+      this.vx = 0;
+      if (this.throwT === 10) {
+        const dx = p.cx - this.cx;
+        game.spawn(new G.EnemyShot(this.cx + this.facing * 8, this.y + 4, G.clamp(dx / 45, -3, 3), -4.6, 'snow', { g: 0.2, r: 4 }));
+        G.Audio.play('enemyShot');
+      }
+      this.vy = Math.min(this.vy + 0.35, 5.5);
+      G.Physics.step(this, game.level);
+    } else {
+      this.walk(game, 0.45);
+      if (p && p.alive && Math.abs(p.cx - this.cx) < 200 && --this.cool <= 0) { this.cool = 120; this.throwT = 24; this.facing = p.cx < this.cx ? -1 : 1; }
+    }
+    this.touchPlayer(game);
+  }
+  sprite() { return this.throwT > 0 ? 'e_yeti_throw0' : EA('e_yeti_walk', this.t); }
+};
+
+G.Penguin = class Penguin extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 14, 3); this.slide = 0; this.coins = 3; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (this.slide > 0) {
+      this.slide--;
+      this.vx = this.facing * 3.2;
+      this.vy = Math.min(this.vy + 0.35, 5.5);
+      G.Physics.step(this, game.level);
+      if (this.hitL || this.hitR) { this.facing *= -1; this.slide = 0; }
+      if (this.t % 3 === 0) G.Particles.add({ x: this.cx - this.facing * 6, y: this.bottom - 1, vy: -0.4, life: 12, color: '#ffffff' });
+    } else {
+      this.walk(game, 0.5);
+      if (p && Math.abs(p.cy - this.cy) < 20 && Math.abs(p.cx - this.cx) < 140 && this.t % 90 === 0) { this.facing = p.cx < this.cx ? -1 : 1; this.slide = 60; }
+    }
+    this.touchPlayer(game);
+  }
+  sprite() { return this.slide > 0 ? 'e_penguin_slide0' : EA('e_penguin_walk', this.t); }
+};
+
+// Страж со щитом: спереди неуязвим для выстрелов и копья (кроме заряда)
+G.Knight = class Knight extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 24, 5); this.coins = 5; this.meter = 15; this.guardT = 0; }
+  guard(src) {
+    if (!src || src.charged) return false;
+    const from = src.vx ? -Math.sign(src.vx) : 0;
+    if (from === this.facing) {
+      this.guardT = 12;
+      G.Audio.play('bump');
+      G.Particles.sparks(this.cx + this.facing * 8, this.cy, 4, '#ffffff', 1.6);
+      if (src instanceof G.Spear) src.recall();
+      return true;
+    }
+    return false;
+  }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    if (this.guardT > 0) this.guardT--;
+    const p = game.player;
+    if (p && this.t % 60 === 0 && Math.abs(p.cy - this.cy) < 30) this.facing = p.cx < this.cx ? -1 : 1;
+    this.walk(game, this.guardT > 0 ? 0 : 0.4);
+    this.touchPlayer(game);
+  }
+  sprite() { return this.guardT > 0 ? 'e_knight_guard0' : EA('e_knight_walk', this.t); }
+};
+
+G.Bat = class Bat extends G.Enemy {
+  constructor(x, y) { super(x, y - 2, 14, 10, 1); this.state = 'hang'; this.coins = 1; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (this.state === 'hang') {
+      if (p && p.alive && Math.abs(p.cx - this.cx) < 90 && p.cy > this.cy - 16) { this.state = 'swoop'; G.Audio.play('enemyShot'); }
+    } else {
+      const dx = p.cx - this.cx, dy = p.cy - 6 - this.cy, d = Math.hypot(dx, dy) || 1;
+      this.vx = G.lerp(this.vx, (dx / d) * 1.5, 0.04);
+      this.vy = G.lerp(this.vy, (dy / d) * 1.5 + Math.sin(this.t * 0.15), 0.06);
+      this.x += this.vx; this.y += this.vy;
+      this.facing = this.vx > 0 ? 1 : -1;
+    }
+    this.touchPlayer(game);
+  }
+  sprite() { return this.state === 'hang' ? 'e_bat_hang0' : EA('e_bat_fly', this.t); }
+};
+
+G.Crow = class Crow extends G.Enemy {
+  constructor(x, y) { super(x, y - 4, 16, 12, 2); this.baseY = this.y; this.coins = 2; this.dive = 0; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (this.dive > 0) {
+      this.dive--;
+      this.x += this.facing * 2.4;
+      this.y += this.dive > 30 ? 2.2 : -2.2;
+    } else {
+      this.x += this.facing * 1.1;
+      this.y = G.lerp(this.y, this.baseY + Math.sin(this.t * 0.06) * 10, 0.1);
+      if (p && Math.abs(p.cx - this.cx) < 60 && p.cy > this.cy + 20 && Math.sign(p.cx - this.cx) === this.facing && this.t % 30 === 0) this.dive = 60;
+      if (Math.abs(this.x - this.baseX0()) > 140) this.facing *= -1;
+    }
+    this.touchPlayer(game);
+  }
+  baseX0() { if (this.x0 === undefined) this.x0 = this.x; return this.x0; }
+  sprite() { return EA('e_crow_fly', this.t); }
+};
+
+G.Ghost = class Ghost extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 16, 2); this.coins = 3; this.alpha = 0.85; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
     const p = game.player;
     if (p && p.alive) {
-      const dx = p.cx - this.cx, dy = p.cy - this.cy;
-      // приближается, только когда игрок смотрит в другую сторону
+      const dx = p.cx - this.cx, dy = p.cy - this.cy, d = Math.hypot(dx, dy) || 1;
       const looking = Math.sign(dx) === -p.facing;
-      this.alpha = G.lerp(this.alpha, looking ? 0.35 : 0.9, 0.1);
-      const sp = looking ? 0.15 : 0.75;
-      const d = Math.hypot(dx, dy) || 1;
+      this.alpha = G.lerp(this.alpha, looking ? 0.4 : 0.9, 0.1);
+      const sp = looking ? 0.12 : 0.6;
       this.vx = G.lerp(this.vx, (dx / d) * sp, 0.05);
       this.vy = G.lerp(this.vy, (dy / d) * sp, 0.05);
       this.facing = dx < 0 ? -1 : 1;
     }
-    this.x += this.vx;
-    this.y += this.vy + Math.sin(this.t * 0.07) * 0.3;
+    this.x += this.vx; this.y += this.vy + Math.sin(this.t * 0.07) * 0.25;
+    this.touchPlayer(game);
+  }
+  sprite() { return EA('e_ghost_float', this.t); }
+};
+
+// Прыгает из жидкости. flame — неуязвим, fish — уязвим
+G.Jumper = class Jumper extends G.Enemy {
+  constructor(x, y, kind) {
+    super(x, y + 22, 12, 14, kind === 'flame' ? 999 : 1);
+    this.kind = kind;
+    this.stompable = kind === 'fish';
+    this.home = this.y;
+    this.cool = G.randi(30, 110);
+    this.coins = kind === 'fish' ? 2 : 0;
+  }
+  hitTest(b) { return this.kind === 'fish' && this.y < this.home - 6 && G.overlap(this, b); }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    if (this.y >= this.home) {
+      this.y = this.home; this.vy = 0;
+      if (--this.cool <= 0) { this.vy = -6.6; this.cool = G.randi(70, 130); G.Particles.fx('fx_splash', this.cx, this.home - 18); }
+    } else this.vy += 0.24;
+    this.y = Math.min(this.home, this.y + this.vy);
+    if (this.kind === 'flame' && this.y < this.home - 2 && this.t % 2 === 0) G.Particles.add({ x: this.cx + G.rand(-3, 3), y: this.bottom, vy: 0.4, life: 14, color: '#ff8020', add: true });
+    if (this.y < this.home - 6) this.touchPlayer(game);
+  }
+  draw(c) {
+    if (this.y >= this.home - 4) return;
+    if (this.kind === 'flame') G.Gfx.glow(this.cx, this.cy, 14, '#ff6010', 0.6);
+    const n = this.kind === 'flame' ? EA('e_flame', this.t) : EA('e_fish_jump', this.t);
+    G.Gfx.spr(n, Math.round(this.cx), Math.round(this.bottom), this.vy > 0 ? this.facing > 0 : this.facing < 0, this.flash > 0);
+  }
+};
+
+G.Monk = class Monk extends G.Enemy {
+  constructor(x, y) { super(x, y, 14, 22, 4); this.cool = 120; this.cast = 0; this.coins = 5; this.meter = 15; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (this.cast > 0) {
+      this.cast--;
+      if (this.cast === 12) { this.aimAt(game, this.cx + this.facing * 6, this.y + 6, 2, 'orb', 0, { ghost: true, life: 200 }); G.Audio.play('teleport'); }
+      this.vy = Math.min(this.vy + 0.35, 5.5); G.Physics.step(this, game.level);
+    } else {
+      this.walk(game, 0.4);
+      if (p && p.alive && Math.abs(p.cx - this.cx) < 200 && --this.cool <= 0) { this.cool = 140; this.cast = 30; this.facing = p.cx < this.cx ? -1 : 1; }
+    }
+    this.touchPlayer(game);
+  }
+  sprite() { return this.cast > 0 ? 'e_monk_cast0' : EA('e_monk_walk', this.t); }
+};
+
+G.Drone = class Drone extends G.Enemy {
+  constructor(x, y) { super(x, y - 20, 14, 12, 3); this.cool = 90; this.coins = 3; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (p) {
+      this.facing = p.cx < this.cx ? -1 : 1;
+      this.x = G.lerp(this.x, p.cx - 7 - this.facing * 40, 0.012);
+      this.y = G.lerp(this.y, p.y - 70 + Math.sin(this.t * 0.05) * 8, 0.02);
+      if (--this.cool <= 0 && p.alive) { this.cool = 110; this.aimAt(game, this.cx, this.bottom, 2.4, 'orb', 0, { ghost: true }); G.Audio.play('enemyShot'); }
+    }
+    this.touchPlayer(game);
+  }
+  sprite() { return EA('e_drone_fly', this.t); }
+};
+
+G.Harpy = class Harpy extends G.Enemy {
+  constructor(x, y) { super(x, y - 10, 18, 14, 3); this.home = { x: this.x, y: this.y }; this.phase = Math.random() * 6; this.coins = 4; this.cool = 80; }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    this.phase += 0.02;
+    const tx = (p ? p.cx : this.home.x) + Math.cos(this.phase) * 90 - 9;
+    const ty = (p ? p.y : this.home.y) - 60 + Math.sin(this.phase * 2) * 30;
+    this.x = G.lerp(this.x, tx, 0.025);
+    this.y = G.lerp(this.y, ty, 0.03);
+    this.facing = p && p.cx < this.cx ? -1 : 1;
+    if (p && --this.cool <= 0) { this.cool = 100; for (const s of [-0.2, 0, 0.2]) this.aimAt(game, this.cx, this.cy, 2.2, 'feather', s); G.Audio.play('enemyShot'); }
+    this.touchPlayer(game);
+  }
+  sprite() { return EA('e_harpy_fly', this.t); }
+};
+
+G.Spiderling = class Spiderling extends G.Enemy {
+  constructor(x, y) { super(x, y, 12, 8, 1); this.coins = 1; }
+  update(game) { this.t++; if (!this.wake(game)) return; this.walk(game, 1.2); this.touchPlayer(game); }
+  sprite() { return EA('e_spiderling_walk', this.t); }
+};
+
+// Кристалл на потолке: висит, стреляет осколками веером вниз
+G.Crystal = class Crystal extends G.Enemy {
+  constructor(x, y, level) {
+    super(x, y, 10, 14, 4);
+    // прикрепляемся к потолку над точкой
+    let ty = Math.floor((y - 1) / 16);
+    while (ty > 0 && !level.isSolid(Math.floor(x / 16), ty - 1)) ty--;
+    this.y = ty * 16;
+    this.cool = 80; this.stompable = false; this.coins = 4; this.facing = 1;
+  }
+  update(game) {
+    this.t++; if (!this.wake(game)) return;
+    const p = game.player;
+    if (p && p.alive && Math.abs(p.cx - this.cx) < 130 && p.cy > this.y && --this.cool <= 0) {
+      this.cool = 100;
+      for (const a of [-0.5, 0, 0.5]) game.spawn(new G.EnemyShot(this.cx, this.bottom, Math.sin(a) * 2.2, Math.cos(a) * 2.2, 'ice'));
+      G.Audio.play('enemyShot');
+    }
     this.touchPlayer(game);
   }
   draw(c) {
-    c.save();
-    c.globalAlpha = this.alpha;
-    this.flashDraw(c, () => {
-      const x = this.cx, y = this.cy;
-      c.save();
-      c.translate(x, y);
-      c.scale(this.facing, 1);
-      G.Gfx.glow(c, 0, 0, 18, '#a0b0ff', 0.25);
-      c.fillStyle = '#e8ecff'; c.strokeStyle = '#3a3a6a'; c.lineWidth = 1;
-      c.beginPath();
-      c.moveTo(-8, 9);
-      c.lineTo(-8, -2);
-      c.arc(0, -2, 8, Math.PI, 0);
-      c.lineTo(8, 9);
-      for (let i = 0; i < 4; i++) {
-        const xx = 8 - (i + 1) * 4;
-        c.lineTo(xx + 2, 6 + Math.sin(this.t * 0.2 + i) * 1.5);
-        c.lineTo(xx, 9);
-      }
-      c.closePath(); c.fill(); c.stroke();
-      G.Gfx.ellipse(c, 1, -3, 2, 3, 0, '#2a2a5a');
-      G.Gfx.ellipse(c, 5.5, -3, 1.8, 2.8, 0, '#2a2a5a');
-      G.Gfx.ellipse(c, 3.5, 3, 1.6, 2, 0, '#2a2a5a');
-      c.fillStyle = 'rgba(255,140,180,0.5)'; c.beginPath(); c.ellipse(-1, 1, 1.6, 1, 0, 0, 7); c.fill();
-      c.restore();
-    });
-    c.restore();
+    G.Gfx.glow(this.cx, this.y + 8, 14, '#5ef0ff', 0.4);
+    G.Gfx.spr(EA('e_crystal', this.t), Math.round(this.cx), Math.round(this.y), false, this.flash > 0);
   }
 };
 
-// --- Огненный дух: выпрыгивает из лавы, неуязвим --------------------------------
-G.Flame = class Flame extends G.Enemy {
-  constructor(x, y) {
-    super(x, y + 20, 12, 14, 999);
-    this.stompable = false;
-    this.home = this.y;
-    this.cool = G.randi(30, 120);
-    this.invulnerable = true;
-    this.coins = 0;
-  }
-  hitTest() { return false; }
-  update(game) {
-    this.t++;
-    if (!this.wake(game)) return;
-    if (this.y >= this.home) {
-      this.y = this.home;
-      this.vy = 0;
-      if (--this.cool <= 0) { this.vy = -6.8; this.cool = G.randi(70, 130); G.Particles.sparks(this.cx, this.y, 8, '#ffb040', 2); }
-    } else this.vy += 0.25;
-    this.y = Math.min(this.home, this.y + this.vy);
-    if (this.y < this.home - 2 && this.t % 2 === 0) G.Particles.add({ x: this.cx + G.rand(-3, 3), y: this.bottom, vy: 0.5, life: 16, size: 4, size2: 0, color: '#ff8020', add: true });
-    if (this.y < this.home - 4) this.touchPlayer(game);
-  }
-  draw(c) {
-    if (this.y >= this.home - 1) return;
-    const x = this.cx, y = this.cy;
-    const up = this.vy < 0;
-    c.save();
-    c.translate(x, y);
-    if (!up) c.scale(1, -1);
-    G.Gfx.glow(c, 0, 0, 20, '#ff6010', 0.6);
-    const f = Math.sin(this.t * 0.5);
-    c.fillStyle = '#ff5010';
-    c.beginPath(); c.moveTo(-6, -2); c.quadraticCurveTo(-5 + f, 8, 0, 11); c.quadraticCurveTo(5 - f, 8, 6, -2); c.arc(0, -2, 6, 0, Math.PI, true); c.fill();
-    c.fillStyle = '#ffd050';
-    c.beginPath(); c.moveTo(-3.5, -1); c.quadraticCurveTo(-3, 5, 0, 7); c.quadraticCurveTo(3, 5, 3.5, -1); c.arc(0, -1, 3.5, 0, Math.PI, true); c.fill();
-    c.restore();
-    c.save();
-    c.translate(x, y);
-    G.Gfx.circle(c, -2, -1, 1.2, '#300');
-    G.Gfx.circle(c, 2, -1, 1.2, '#300');
-    c.restore();
-  }
-};
-
-G.makeEnemy = (s) => {
+G.makeEnemy = (s, level) => {
   switch (s.type) {
     case 'imp': return new G.Imp(s.x, s.y);
-    case 'bat': return new G.Bat(s.x, s.y);
+    case 'rat': return new G.Rat(s.x, s.y);
     case 'frog': return new G.Frog(s.x, s.y);
-    case 'head': return new G.StoneHead(s.x, s.y);
     case 'hedgehog': return new G.Hedgehog(s.x, s.y);
+    case 'head': return new G.StoneHead(s.x, s.y);
+    case 'slime': return new G.Slime(s.x, s.y);
+    case 'yeti': return new G.Yeti(s.x, s.y);
+    case 'penguin': return new G.Penguin(s.x, s.y);
+    case 'knight': return new G.Knight(s.x, s.y);
+    case 'bat': return new G.Bat(s.x, s.y);
+    case 'crow': return new G.Crow(s.x, s.y);
     case 'ghost': return new G.Ghost(s.x, s.y);
-    case 'flame': return new G.Flame(s.x, s.y);
+    case 'flame': return new G.Jumper(s.x, s.y, 'flame');
+    case 'fish': return new G.Jumper(s.x, s.y, 'fish');
+    case 'monk': return new G.Monk(s.x, s.y);
+    case 'drone': return new G.Drone(s.x, s.y);
+    case 'harpy': return new G.Harpy(s.x, s.y);
+    case 'spiderling': return new G.Spiderling(s.x, s.y);
+    case 'crystal': return new G.Crystal(s.x, s.y, level);
   }
   return null;
 };

@@ -1,130 +1,178 @@
 'use strict';
-// Рендер: холст во всё окно с реальным разрешением экрана (devicePixelRatio),
-// логическая сцена 640×360 масштабируется с сохранением 16:9.
+// Пиксельный конвейер: вся сцена рисуется в буфер 480×270 без сглаживания,
+// затем буфер выводится на экран с целым масштабом (на 1080p — ровно ×4).
 G.Gfx = (() => {
   const X = {};
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  X.canvas = canvas;
+  const screen = document.getElementById('game');
+  const sctx = screen.getContext('2d');
+  const buf = document.createElement('canvas');
+  buf.width = G.W;
+  buf.height = G.H;
+  const ctx = buf.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  X.canvas = screen;
+  X.buf = buf;
   X.ctx = ctx;
   X.scale = 1;
   X.offX = 0;
   X.offY = 0;
-  X.version = 0; // меняется при ресайзе — сигнал перестроить кэши
 
   X.resize = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const dpr = window.devicePixelRatio || 1;
     const cw = window.innerWidth, ch = window.innerHeight;
-    canvas.width = Math.floor(cw * dpr);
-    canvas.height = Math.floor(ch * dpr);
-    canvas.style.width = cw + 'px';
-    canvas.style.height = ch + 'px';
-    X.scale = Math.min(canvas.width / G.W, canvas.height / G.H);
-    X.offX = Math.floor((canvas.width - G.W * X.scale) / 2);
-    X.offY = Math.floor((canvas.height - G.H * X.scale) / 2);
-    X.version++;
+    screen.width = Math.floor(cw * dpr);
+    screen.height = Math.floor(ch * dpr);
+    screen.style.width = cw + 'px';
+    screen.style.height = ch + 'px';
+    const fit = Math.min(screen.width / G.W, screen.height / G.H);
+    // целый масштаб, если он не слишком мельчит картинку
+    X.scale = fit >= 2 ? Math.floor(fit) : fit;
+    X.offX = Math.floor((screen.width - G.W * X.scale) / 2);
+    X.offY = Math.floor((screen.height - G.H * X.scale) / 2);
+    sctx.imageSmoothingEnabled = false;
   };
   window.addEventListener('resize', X.resize);
   X.resize();
 
-  // Экранная система координат (UI)
-  X.screen = () => ctx.setTransform(X.scale, 0, 0, X.scale, X.offX, X.offY);
-  // Мировая система с камерой; координаты камеры округляются до физических пикселей
-  X.world = (camX, camY) => {
-    const s = X.scale;
-    ctx.setTransform(s, 0, 0, s, Math.round(X.offX - camX * s), Math.round(X.offY - camY * s));
+  X.present = () => {
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.fillStyle = '#000';
+    sctx.fillRect(0, 0, screen.width, screen.height);
+    sctx.imageSmoothingEnabled = false;
+    sctx.drawImage(buf, X.offX, X.offY, G.W * X.scale, G.H * X.scale);
   };
 
-  // Вспомогательные фигуры
-  X.rr = (c, x, y, w, h, r) => {
-    r = Math.min(r, w / 2, h / 2);
-    c.beginPath();
-    c.moveTo(x + r, y);
-    c.arcTo(x + w, y, x + w, y + h, r);
-    c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r);
-    c.arcTo(x, y, x + w, y, r);
-    c.closePath();
-  };
-  X.circle = (c, x, y, r, fill, stroke, lw = 1) => {
-    c.beginPath();
-    c.arc(x, y, r, 0, Math.PI * 2);
-    if (fill) { c.fillStyle = fill; c.fill(); }
-    if (stroke) { c.lineWidth = lw; c.strokeStyle = stroke; c.stroke(); }
-  };
-  X.ellipse = (c, x, y, rx, ry, rot, fill, stroke, lw = 1) => {
-    c.beginPath();
-    c.ellipse(x, y, Math.max(0.01, rx), Math.max(0.01, ry), rot, 0, Math.PI * 2);
-    if (fill) { c.fillStyle = fill; c.fill(); }
-    if (stroke) { c.lineWidth = lw; c.strokeStyle = stroke; c.stroke(); }
-  };
-  // «Конечность» — скруглённая линия с обводкой
-  X.limb = (c, x1, y1, x2, y2, w, color, outline = '#1a1020') => {
-    c.lineCap = 'round';
-    c.strokeStyle = outline;
-    c.lineWidth = w + 1.6;
-    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
-    c.strokeStyle = color;
-    c.lineWidth = w;
-    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
-  };
-  X.limb3 = (c, x1, y1, x2, y2, x3, y3, w, color, outline = '#1a1020') => {
-    c.lineCap = 'round';
-    c.lineJoin = 'round';
-    for (const [lw, col] of [[w + 1.6, outline], [w, color]]) {
-      c.strokeStyle = col;
-      c.lineWidth = lw;
-      c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineTo(x3, y3); c.stroke();
+  X.screen = () => ctx.setTransform(1, 0, 0, 1, 0, 0);
+  X.world = (camX, camY) => ctx.setTransform(1, 0, 0, 1, -Math.round(camX), -Math.round(camY));
+
+  X.rect = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
+
+  // --- Свечение: заранее отрисованные радиальные пятна с полосами (без сглаживания) ---
+  const glows = {};
+  X.glow = (x, y, r, color, a = 1) => {
+    r = Math.max(2, Math.round(r));
+    const key = color + r;
+    let g = glows[key];
+    if (!g) {
+      g = document.createElement('canvas');
+      g.width = g.height = r * 2;
+      const c = g.getContext('2d');
+      const [cr, cg, cb] = G.hexToRgb(color);
+      const img = c.createImageData(r * 2, r * 2);
+      for (let yy = 0; yy < r * 2; yy++) for (let xx = 0; xx < r * 2; xx++) {
+        const d = Math.hypot(xx + 0.5 - r, yy + 0.5 - r) / r;
+        if (d >= 1) continue;
+        // ступенчатое затухание — «пиксельный» ореол
+        const k = Math.ceil((1 - d) * 4) / 4;
+        const i = (yy * r * 2 + xx) * 4;
+        img.data[i] = cr; img.data[i + 1] = cg; img.data[i + 2] = cb; img.data[i + 3] = Math.round(k * k * 150);
+      }
+      c.putImageData(img, 0, 0);
+      glows[key] = g;
     }
-  };
-  X.glow = (c, x, y, r, color, a = 1) => {
-    const g = c.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, G.rgba(color, a));
-    g.addColorStop(1, G.rgba(color, 0));
-    c.fillStyle = g;
-    c.fillRect(x - r, y - r, r * 2, r * 2);
+    const prev = ctx.globalCompositeOperation, pa = ctx.globalAlpha;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = pa * a;
+    ctx.drawImage(g, Math.round(x - r), Math.round(y - r));
+    ctx.globalCompositeOperation = prev;
+    ctx.globalAlpha = pa;
   };
 
-  // Текст: пиксельный шрифт с обводкой и тенью
-  X.font = '"Press Start 2P", "Courier New", monospace';
-  X.text = (str, x, y, { size = 8, color = '#fff', align = 'left', outline = '#120a1c', shadow = true, alpha = 1, base = 'top' } = {}) => {
-    ctx.save();
-    ctx.globalAlpha *= alpha;
-    ctx.font = `${size}px ${X.font}`;
-    ctx.textAlign = align;
-    ctx.textBaseline = base;
-    if (shadow) {
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      ctx.fillText(str, x + size * 0.18, y + size * 0.22);
+  // --- Текст: пиксельный шрифт, пороговая отрисовка (никаких полутонов) ---
+  X.font = '"Press Start 2P", monospace';
+  const textCache = new Map();
+  const tcv = document.createElement('canvas');
+  const tctx = tcv.getContext('2d', { willReadFrequently: true });
+  function glyphs(str, color, size) {
+    const key = size + '|' + color + '|' + str;
+    let img = textCache.get(key);
+    if (img) return img;
+    tctx.font = `${size}px ${X.font}`;
+    const w = Math.max(1, Math.ceil(tctx.measureText(str).width) + 2), h = size + 4;
+    tcv.width = w; tcv.height = h;
+    tctx.font = `${size}px ${X.font}`;
+    tctx.textBaseline = 'top';
+    tctx.fillStyle = '#fff';
+    tctx.fillText(str, 1, 1);
+    const data = tctx.getImageData(0, 0, w, h);
+    const [r, g, b] = G.hexToRgb(color);
+    for (let i = 0; i < data.data.length; i += 4) {
+      const on = data.data[i + 3] > 110;
+      data.data[i] = r; data.data[i + 1] = g; data.data[i + 2] = b; data.data[i + 3] = on ? 255 : 0;
     }
-    if (outline) {
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = Math.max(2, size * 0.32);
-      ctx.strokeStyle = outline;
-      ctx.strokeText(str, x, y);
+    img = document.createElement('canvas');
+    img.width = w; img.height = h;
+    img.getContext('2d').putImageData(data, 0, 0);
+    if (textCache.size > 600) textCache.clear();
+    textCache.set(key, img);
+    return img;
+  }
+  X.textWidth = (str, size = 8) => glyphs(str, '#ffffff', size).width - 2;
+  // opts: color, align ('left'|'center'|'right'), shadow (цвет или false), outline (цвет), scale (1|2), alpha
+  X.text = (str, x, y, o = {}) => {
+    str = String(str);
+    const size = 8, sc = o.scale || 1;
+    const img = glyphs(str, o.color || '#ffffff', size);
+    const w = (img.width - 2) * sc;
+    let dx = Math.round(o.align === 'center' ? x - w / 2 : o.align === 'right' ? x - w : x) - sc;
+    const dy = Math.round(y) - sc;
+    const pa = ctx.globalAlpha;
+    if (o.alpha !== undefined) ctx.globalAlpha = pa * o.alpha;
+    const dw = img.width * sc, dh = img.height * sc;
+    if (o.outline) {
+      const ol = glyphs(str, o.outline, size);
+      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) ctx.drawImage(ol, dx + ox * sc, dy + oy * sc, dw, dh);
     }
-    ctx.fillStyle = color;
-    ctx.fillText(str, x, y);
-    ctx.restore();
-  };
-  X.textWidth = (str, size = 8) => {
-    ctx.save();
-    ctx.font = `${size}px ${X.font}`;
-    const w = ctx.measureText(str).width;
-    ctx.restore();
+    if (o.shadow !== false) {
+      const sh = glyphs(str, o.shadow || '#120a1c', size);
+      ctx.drawImage(sh, dx + sc, dy + sc, dw, dh);
+    }
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.globalAlpha = pa;
     return w;
   };
 
-  // Отрисовка во внеэкранный холст с учётом текущего масштаба —
-  // кэшированные спрайты остаются чёткими на любом экране.
-  X.makeCanvas = (w, h, fn, sc = X.scale) => {
-    const cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.ceil(w * sc));
-    cv.height = Math.max(1, Math.ceil(h * sc));
-    const c = cv.getContext('2d');
-    c.scale(cv.width / w, cv.height / h);
-    fn(c, w, h);
-    return cv;
+  // 9-slice рамка из ui_frame_* (8×8 каждая часть)
+  X.frame = (x, y, w, h) => {
+    x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+    const A = G.Art;
+    if (!A.has('ui_frame_c')) {
+      X.rect(x, y, w, h, '#140c22');
+      ctx.strokeStyle = '#e8b84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      return;
+    }
+    const part = (n) => A.get('ui_frame_' + n).img;
+    for (let yy = y + 8; yy < y + h - 8; yy += 8) {
+      const hh = Math.min(8, y + h - 8 - yy);
+      ctx.drawImage(part('l'), 0, 0, 8, hh, x, yy, 8, hh);
+      ctx.drawImage(part('r'), 0, 0, 8, hh, x + w - 8, yy, 8, hh);
+      for (let xx = x + 8; xx < x + w - 8; xx += 8) {
+        const ww = Math.min(8, x + w - 8 - xx);
+        ctx.drawImage(part('c'), 0, 0, ww, hh, xx, yy, ww, hh);
+      }
+    }
+    for (let xx = x + 8; xx < x + w - 8; xx += 8) {
+      const ww = Math.min(8, x + w - 8 - xx);
+      ctx.drawImage(part('t'), 0, 0, ww, 8, xx, y, ww, 8);
+      ctx.drawImage(part('b'), 0, 0, ww, 8, xx, y + h - 8, ww, 8);
+    }
+    ctx.drawImage(part('tl'), x, y);
+    ctx.drawImage(part('tr'), x + w - 8, y);
+    ctx.drawImage(part('bl'), x, y + h - 8);
+    ctx.drawImage(part('br'), x + w - 8, y + h - 8);
   };
+
+  // Отрисовка спрайта (обёртка над G.Art с заглушкой для отсутствующих)
+  const warned = new Set();
+  X.spr = (name, x, y, flip = false, white = false) => {
+    if (!G.Art.has(name)) {
+      if (!warned.has(name)) { warned.add(name); console.warn('нет спрайта', name); }
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillRect(Math.round(x) - 4, Math.round(y) - 8, 8, 8);
+      return;
+    }
+    G.Art.draw(ctx, name, x, y, flip, white);
+  };
+  X.missing = () => [...warned];
   return X;
 })();

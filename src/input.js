@@ -10,13 +10,14 @@ G.Input = (() => {
     shoot: ['KeyX', 'KeyJ'],
     spear: ['KeyC', 'KeyL'],
     special: ['KeyV', 'KeyI'],
+    dash: ['ShiftLeft', 'ShiftRight', 'KeyF'],
     pause: ['Escape', 'KeyP'],
     confirm: ['Enter', 'KeyZ', 'Space'],
     back: ['Escape', 'Backspace', 'KeyX'],
   };
   // Кнопки стандартного геймпада
   const padMap = {
-    jump: [0], shoot: [2], spear: [1], special: [3, 5], pause: [9],
+    jump: [0], shoot: [2], spear: [1], special: [3], dash: [5, 7], pause: [9],
     confirm: [0, 9], back: [1], up: [12], down: [13], left: [14], right: [15],
   };
   const held = new Set();
