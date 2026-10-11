@@ -1174,43 +1174,43 @@ G.CHUNKS = {
 
 G.LEVELS = [
   {
-    id: 1, hints: ['[←][→] ходьба   [Z] или [↑] прыжок', 'Ударь блок головой снизу', '[C] брось копьё в мишень на стене — и запрыгни на него [Z]', 'Копьё [C] разбивает кирпичи', 'Высокая крыша: копьё [C] в стену — и наверх'], title: 'КРЫШИ ТОКИО', theme: 'city', music: 'city', boss: 'bull', unlock: 'shot',
+    id: 1, hints: ['[←][→] ходьба   [Z] или [↑] прыжок', 'Ударь блок головой снизу', '[C] брось копьё в мишень на стене — и запрыгни на него [Z]', 'Копьё [C] разбивает кирпичи', 'Высокая крыша: копьё [C] в стену — и наверх'], title: 'КРЫШИ ТОКИО', theme: 'city', music: 'city', boss: 'bull', bossHint: 'Бей, когда бык врежется в стену и оглушён!', unlock: 'shot',
     chunks: ['city_start', 'city_gap', 'city_spear', 'city_bricks', 'city_rest', 'city_conveyor', 'city_crane', 'city_climb', 'city_roofs', 'city_gap', 'city_pre', 'arena_city'],
     signs: ['C — бросить копьё, Z — прыжок', 'Копьё в стену — и на него можно встать!', 'Кирпичи ломаются копьём и головой', 'Впереди опасность...'],
   },
   {
-    id: 2, hints: ['[X] выстрел третьим глазом   [A] выстрел вверх'], title: 'КАНАЛИЗАЦИЯ', theme: 'sewer', music: 'sewer', boss: 'croc', unlock: 'djump',
+    id: 2, hints: ['[X] выстрел третьим глазом   [A] выстрел вверх'], title: 'КАНАЛИЗАЦИЯ', theme: 'sewer', music: 'sewer', boss: 'croc', bossHint: 'Бей, когда крокодил вынырнул. Волны жижи — перепрыгивай!', unlock: 'djump',
     chunks: ['sew_start', 'sew_sludge', 'sew_pipes', 'sew_rest', 'sew_geyser', 'sew_lift', 'sew_shaft', 'sew_drop', 'sew_pipes', 'sew_pre', 'arena_sewer'],
     signs: ['X — выстрел третьим глазом', 'Что-то большое плещется в жиже...'],
   },
   {
-    id: 3, hints: ['[Z] в воздухе — двойной прыжок', 'В воде [Z] — гребок вверх'], title: 'РУИНЫ ДЖУНГЛЕЙ', theme: 'ruins', music: 'ruins', boss: 'idol', unlock: 'dash',
+    id: 3, hints: ['[Z] в воздухе — двойной прыжок', 'В воде [Z] — гребок вверх'], title: 'РУИНЫ ДЖУНГЛЕЙ', theme: 'ruins', music: 'ruins', boss: 'idol', bossHint: 'Каменные шипы вырастают под тобой — двойной прыжок [Z][Z]!', unlock: 'dash',
     chunks: ['ruins_start', 'ruins_chasm', 'ruins_ledges', 'ruins_pool', 'ruins_rest', 'ruins_boulders', 'ruins_temple', 'ruins_crumble', 'ruins_high', 'ruins_pre', 'arena_ruins'],
     signs: ['Z в воздухе — двойной прыжок', 'Через пропасть — в два прыжка!', 'Каменный идол пробуждается...'],
   },
   {
-    id: 4, hints: ['[SHIFT] — рывок: сквозь атаки и треснувшие стены'], title: 'КРИСТАЛЬНЫЕ ПЕЩЕРЫ', theme: 'cave', music: 'cave', boss: 'spider', unlock: 'charge',
+    id: 4, hints: ['[SHIFT] — рывок: сквозь атаки и треснувшие стены'], title: 'КРИСТАЛЬНЫЕ ПЕЩЕРЫ', theme: 'cave', music: 'cave', boss: 'spider', bossHint: 'Стену паутины не перепрыгнуть — прорвись рывком [SHIFT]!', unlock: 'charge',
     chunks: ['cave_start', 'cave_dashgap', 'cave_cracks', 'cave_rest', 'cave_icicles', 'cave_ceiling', 'cave_acid', 'cave_secret', 'cave_dashgap', 'cave_pre', 'arena_cave'],
     signs: ['SHIFT — рывок, сквозь атаки', 'Прыжок, затем рывок — через пропасть', 'Глубже — логово паука'],
     decor: 0.14,
   },
   {
-    id: 5, hints: ['Держи [X] — заряженный выстрел. Ломает щиты стражей'], title: 'ЛЕДЯНАЯ ГОРА', theme: 'ice', music: 'ice', boss: 'golem', unlock: 'wall',
+    id: 5, hints: ['Держи [X] — заряженный выстрел. Ломает щиты стражей'], title: 'ЛЕДЯНАЯ ГОРА', theme: 'ice', music: 'ice', boss: 'golem', bossHint: 'Держи [X] — заряженный выстрел раскалывает броню!', unlock: 'wall',
     chunks: ['ice_start', 'ice_slope', 'ice_gap', 'ice_rest', 'ice_icicles', 'ice_knights', 'ice_climb', 'ice_secret', 'ice_gap', 'ice_pre', 'arena_ice'],
     signs: ['Держи X — заряд. Пробивает щиты!', 'Голем бронирован — бей, когда раскроет ядро'],
   },
   {
-    id: 6, hints: ['Прижмись к стене в прыжке и жми [Z] — отскок'], title: 'ОГНЕННАЯ ГОРА', theme: 'volcano', music: 'volcano', boss: 'serpent', unlock: 'pound',
+    id: 6, hints: ['Прижмись к стене в прыжке и жми [Z] — отскок'], title: 'ОГНЕННАЯ ГОРА', theme: 'volcano', music: 'volcano', boss: 'serpent', bossHint: 'Лава поднимается — уходи на платформы, прыгай от стен!', unlock: 'pound',
     chunks: ['vol_start', 'vol_shaft', 'vol_firebar', 'vol_lava', 'vol_rest', 'vol_rise', 'vol_walls', 'vol_heads', 'vol_lava', 'vol_pre', 'arena_volcano'],
     signs: ['Прижмись к стене и прыгай — отскок!', 'Лава поднимается — карабкайся вверх!', 'Из лавы поднимается змей...'],
   },
   {
-    id: 7, hints: ['В прыжке нажми [↓] — удар сверху: крушит окованные блоки', 'Встань на поток воздуха — он поднимет тебя'], title: 'НЕБЕСНЫЙ ХРАМ', theme: 'sky', music: 'sky', boss: 'garuda', unlock: 'eye',
+    id: 7, hints: ['В прыжке нажми [↓] — удар сверху: крушит окованные блоки', 'Встань на поток воздуха — он поднимет тебя'], title: 'НЕБЕСНЫЙ ХРАМ', theme: 'sky', music: 'sky', boss: 'garuda', bossHint: 'Гаруда упал? Удар сверху [↓] — двойной урон!', unlock: 'eye',
     chunks: ['sky_start', 'sky_fans', 'sky_pound', 'sky_rest', 'sky_saws', 'sky_islands', 'sky_tower', 'sky_fans', 'sky_pre', 'arena_sky'],
     signs: ['В прыжке ↓ — удар сверху', 'Окованные блоки — только ударом сверху', 'Страж небес следит за тобой'],
   },
   {
-    id: 8, hints: ['[V] — пробуждение глаза, когда шкала полна'], title: 'ХРАМ ЗАРКУНА', theme: 'temple', music: 'temple', boss: 'prince', unlock: null,
+    id: 8, hints: ['[V] — пробуждение глаза, когда шкала полна'], title: 'ХРАМ ЗАРКУНА', theme: 'temple', music: 'temple', boss: 'prince', bossHint: '', unlock: null,
     chunks: ['tmp_start', 'tmp_hall', 'tmp_trials', 'tmp_rest', 'tmp_gauntlet', 'tmp_lava', 'tmp_climb', 'tmp_hall', 'tmp_pre', 'arena_temple'],
     signs: ['V — пробуждение глаза, когда шкала полна', 'Принц Заркун ждёт...'],
   },

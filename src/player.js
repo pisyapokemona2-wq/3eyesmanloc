@@ -189,9 +189,10 @@ G.Player = class Player extends G.Entity {
     }
     this.hp -= dmg;
     const dir = fromX === undefined ? -this.facing : this.cx < fromX ? -1 : 1;
-    this.vx = dir * 2.2;
+    this.vx = dir * 2.6;
     this.vy = -3.6;
-    this.stun = 18;
+    this.stun = 12;
+    this.dashT = 0;
     this.invuln = 100 + (game.stats.armor || 0) * 30;
     this.charge = 0;
     this.pounding = false;
@@ -255,16 +256,18 @@ G.Player = class Player extends G.Entity {
 
     // --- РЫВОК
     if (this.has('dash') && can && I.pressed('dash') && this.canDash && this.dashCd <= 0 && !this.crouching) {
-      this.dashT = 13 + (game.stats.dash || 0) * 3;
+      this.dashT = 11 + (game.stats.dash || 0) * 2;
       this.canDash = false;
-      this.dashCd = 24 - (game.stats.dash || 0) * 6;
+      this.dashCd = 34 - (game.stats.dash || 0) * 8;
+      this.squash(1.25, 0.8);
       this.pounding = false;
       if (left) this.facing = -1; else if (right) this.facing = 1;
       G.Audio.play('dash');
       G.Particles.dust(this.cx, this.bottom);
     }
     if (this.dashT > 0) {
-      this.vx = this.facing * 4.6;
+      this.dashT--;
+      this.vx = this.facing * 5.2;
       this.vy = 0;
       if (this.t % 2 === 0) game.spawnAfterimage(this);
       // пробиваем треснувшие стены
@@ -273,7 +276,7 @@ G.Player = class Player extends G.Entity {
         const tx = Math.floor(fx / 16), ty = Math.floor(yy / 16);
         if (L.get(tx, ty) === G.T.CRACKED) L.hitBlock(tx, ty, game, 'dash');
       }
-      if (this.dashT === 1) this.vx = this.facing * 2;
+      if (this.dashT === 0) this.vx = this.facing * 2.3; // выход из рывка — сразу в бег
     }
 
     // приседание
@@ -284,15 +287,18 @@ G.Player = class Player extends G.Entity {
     // горизонталь
     if (this.dashT <= 0) {
       const ice = this.onGround && this.groundTile === G.T.ICE;
-      const maxV = (this.slow ? 1.2 : this.inWater ? 1.5 : 2.1) * (game.eyeMode ? 1.15 : 1) * (1 + (game.stats.speed || 0) * 0.06);
+      const maxV = (this.slow ? 1.2 : this.inWater ? 1.5 : 2.3) * (game.eyeMode ? 1.15 : 1) * (1 + (game.stats.speed || 0) * 0.06);
       let target = 0;
       if (can && !this.crouching && !this.pounding) {
         if (left && !(this.wallLock > 0 && this.wallKick < 0)) { target = -maxV; this.facing = -1; }
         if (right && !(this.wallLock > 0 && this.wallKick > 0)) { target = maxV; this.facing = 1; }
       } else if (this.crouching) { if (left) this.facing = -1; if (right) this.facing = 1; }
       if (this.stun <= 0) {
-        let acc = this.onGround ? (target === 0 ? 0.42 : 0.32) : 0.24;
-        if (ice) acc *= 0.18;
+        // разгон за 2–3 кадра, остановка и разворот мгновенные (как в Hollow Knight)
+        const turning = target !== 0 && Math.sign(target) !== Math.sign(this.vx) && Math.abs(this.vx) > 0.1;
+        let acc = this.onGround ? (target === 0 || turning ? 1.4 : 0.9) : (target === 0 ? 0.35 : turning ? 0.9 : 0.6);
+        if (Math.abs(this.vx) > Math.abs(target) + 0.05 && target !== 0 && Math.sign(target) === Math.sign(this.vx)) acc = this.onGround ? 0.25 : 0.08; // после рывка/пружины не обрубаем скорость
+        if (ice) acc *= 0.15;
         if (this.wallLock > 0) acc *= 0.3;
         this.vx = G.approach(this.vx, target, acc);
       } else this.vx *= 0.94;
@@ -307,10 +313,11 @@ G.Player = class Player extends G.Entity {
     }
 
     // --- ПРЫЖКИ
-    if (this.onGround || this.inWater) { this.coyote = 6; this.airJumps = 0; this.canDash = true; }
+    if (this.onGround || this.inWater) { this.coyote = 7; this.airJumps = 0; this.canDash = true; }
+    if (this.wallDir !== 0) this.canDash = true;
     else if (this.coyote > 0) this.coyote--;
     const jumpPress = can && I.pressed('jump');
-    if (jumpPress) this.jumpBuf = 7; else if (this.jumpBuf > 0) this.jumpBuf--;
+    if (jumpPress) this.jumpBuf = 8; else if (this.jumpBuf > 0) this.jumpBuf--;
     this.dropping = false;
     // удар сверху: просто ↓ в воздухе (или ↓+прыжок)
     const poundIn = can && !this.onGround && (I.pressed('down') || (this.jumpBuf > 0 && down)) && this.coyote <= 0;
@@ -339,6 +346,7 @@ G.Player = class Player extends G.Entity {
     } else if (this.jumpBuf > 0 && this.coyote > 0 && this.dashT <= 0) {
       if (this.crouching) this.setCrouch(false, L);
       this.vy = this.slow ? -5.4 : -7.1;
+      this.squash(0.8, 1.2);
       this.jumpBuf = 0; this.coyote = 0;
       this.onGround = false; this.platform = null;
       this.jumpHeld = true; this.springBoost = false;
@@ -357,12 +365,13 @@ G.Player = class Player extends G.Entity {
     } else if (this.jumpBuf > 0 && this.has('djump') && this.airJumps < 1 && !this.onGround && this.dashT <= 0 && !this.pounding) {
       this.airJumps++;
       this.vy = -6.4;
+      this.squash(0.8, 1.2);
       this.jumpBuf = 0; this.jumpHeld = true;
       this.flipT = 22;
       G.Audio.play('spring');
       G.Particles.fx('fx_ring', this.cx, this.bottom);
     }
-    if (this.jumpHeld && !I.down('jump') && this.vy < -2 && !this.springBoost) { this.vy *= 0.5; this.jumpHeld = false; }
+    if (this.jumpHeld && !I.down('jump') && this.vy < -1.6 && !this.springBoost) { this.vy = -1.6; this.jumpHeld = false; }
     if (this.vy >= 0) this.jumpHeld = false;
 
     // гравитация
@@ -370,8 +379,8 @@ G.Player = class Player extends G.Entity {
       if (this.pounding) this.vy = Math.min(this.vy + 0.9, 9);
       else if (this.inWater) this.vy = Math.min(this.vy + 0.12, 1.4);
       else {
-        const g = Math.abs(this.vy) < 1.1 && I.down('jump') ? 0.24 : 0.36;
-        this.vy = Math.min(this.vy + g, 6.6);
+        const g = Math.abs(this.vy) < 1.1 && I.down('jump') ? 0.22 : this.vy > 0 ? 0.42 : 0.36;
+        this.vy = Math.min(this.vy + g, 7.2);
         if (this.wallDir !== 0 && this.vy > 1.1) { this.vy = 1.1; if (this.t % 5 === 0) G.Particles.add({ x: this.wallDir > 0 ? this.x + this.w : this.x, y: this.y + 8, vy: 0.3, life: 14, color: '#d8ccbc' }); }
       }
     }
@@ -407,7 +416,8 @@ G.Player = class Player extends G.Entity {
     // приземление
     if (this.onGround && !wasGround) {
       if (this.pounding) this.poundLand(game);
-      else if (fallV > 3.5) { this.landT = 6; G.Particles.dust(this.cx, this.bottom, 3); G.Audio.play('land'); }
+      else if (fallV > 3.5) { this.landT = 6; this.squash(1.25, 0.78); G.Particles.dust(this.cx, this.bottom, 3); G.Audio.play('land'); }
+      else if (fallV > 1.5) this.squash(1.1, 0.9);
     }
 
     this.checkHazards(game);
@@ -446,7 +456,7 @@ G.Player = class Player extends G.Entity {
       const t = L.get(tx, ty);
       if (t === G.T.HEAVY || t === G.T.BRICK || t === G.T.CRACKED || t === G.T.BONUS) L.hitBlock(tx, ty, game, 'pound');
     }
-    for (const e of game.targets()) if (G.dist(e.cx, e.bottom, this.cx, this.bottom) < 34) e.hurt(3, game, { vx: Math.sign(e.cx - this.cx) });
+    for (const e of game.targets()) if (G.dist(e.cx, e.bottom, this.cx, this.bottom) < 34 || (e.isBoss && G.overlap(e, { x: this.x - 6, y: this.y, w: this.w + 12, h: this.h + 8 }))) e.hurt(3, game, { vx: Math.sign(e.cx - this.cx), pound: true });
   }
 
   chargeMax(game) { return Math.round(56 / (1 + game.stats.charge * 0.35)); }
@@ -518,8 +528,10 @@ G.Player = class Player extends G.Entity {
     }
   }
 
+  squash(sx, sy) { this.sqx = sx; this.sqy = sy; }
   // выбор кадра
   updateAnim() {
+    this.sqx = G.lerp(this.sqx || 1, 1, 0.22); this.sqy = G.lerp(this.sqy || 1, 1, 0.22);
     let a;
     if (this.winT > 0) a = 'win';
     else if (this.stun > 0) a = 'hurt';
@@ -580,7 +592,12 @@ G.Player = class Player extends G.Entity {
     }
     if (game.stats.shield > 0 && this.alive) G.Gfx.glow(x, y - 14, 20, '#80d0ff', 0.25);
     const white = this.stun > 0 && this.stun % 4 < 2;
-    G.Gfx.spr(name, x, y, flip, white);
+    const sx = this.sqx || 1, sy = this.sqy || 1;
+    if (Math.abs(sx - 1) > 0.03 || Math.abs(sy - 1) > 0.03) {
+      c.save(); c.translate(x, y); c.scale(sx, sy); c.translate(-x, -y);
+      G.Gfx.spr(name, x, y, flip, white);
+      c.restore();
+    } else G.Gfx.spr(name, x, y, flip, white);
     // свечение третьего глаза
     const glowK = Math.min(1, (this.charge > 10 ? this.charge / this.chargeMax(game) : 0) + (this.shootAnim > 0 ? 0.6 : 0) + (game.eyeMode > 0 ? 0.8 : 0));
     if (glowK > 0.05 && this.alive) {

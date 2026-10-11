@@ -324,6 +324,8 @@ G.Game = class Game {
       G.Audio.play('roar');
       this.shake(4, 30);
       G.UI.bossBanner(this.boss.name);
+      const bh = G.LEVELS[this.levelIdx].bossHint;
+      if (bh) this.later(170, () => G.UI.toast(bh));
       if (this.levelIdx === G.LEVELS.length - 1) {
         const sv = G.Save.data, tries = sv.finalTries || 0, ck = sv.finalCk || 1;
         if (this.finalRetry || tries > 0) G.UI.toast(`ПОПЫТКА ${tries + 1}` + (ck < 3 ? (tries < 10 ? ` · сохранение формы через ${10 - tries}` : ' · следующая форма сохранится') : ''));
