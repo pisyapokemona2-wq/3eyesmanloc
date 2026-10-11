@@ -34,6 +34,7 @@ G.Input = (() => {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => held.delete(e.code));
+  window.addEventListener('pointerdown', () => { anyKeyLatch = true; window.focus(); });
   window.addEventListener('blur', () => held.clear());
 
   function padState() {
