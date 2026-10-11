@@ -751,117 +751,315 @@ G.Beam = class Beam extends G.Entity {
   }
 };
 
+// Горизонтальный луч над полом: спасают только платформы
+G.HBeam = class HBeam extends G.Entity {
+  constructor(x, y, w, h = 26, warn = 60, life = 36) { super(x, y, w, h); this.warn = warn; this.life = life; this.layer = 2; }
+  update(game) {
+    this.t++;
+    if (this.t === this.warn) { G.Audio.play('laser'); game.shake(3, this.life); }
+    if (this.t > this.warn + this.life) this.dead = true;
+    if (this.t > this.warn) {
+      const p = game.player;
+      if (p && p.alive && G.overlap({ x: this.x, y: this.y + 3, w: this.w, h: this.h - 6 }, p.hurtbox())) p.hurt(1, game, p.cx);
+      if (this.t % 2 === 0) G.Particles.add({ x: this.x + Math.random() * this.w, y: this.y + this.h / 2, vx: G.rand(-1, 1), vy: G.rand(-2, -0.5), life: 16, color: '#ff80e0', kind: 'spark', add: true });
+    }
+  }
+  draw(c) {
+    const x = Math.round(this.x), y = Math.round(this.y), w = Math.round(this.w), h = Math.round(this.h);
+    if (this.t <= this.warn) {
+      if (this.t % 8 < 4) { c.fillStyle = 'rgba(255,60,200,0.45)'; c.fillRect(x, y, w, 1); c.fillRect(x, y + h - 1, w, 1); }
+      if (this.t % 16 < 8) G.Gfx.text('!', x + w / 2, y + h / 2 - 4, { align: 'center', color: '#ff80e0' });
+      return;
+    }
+    const k = this.t % 4 < 2 ? 0 : 1;
+    c.globalCompositeOperation = 'lighter';
+    c.fillStyle = 'rgba(255,40,180,0.45)'; c.fillRect(x, y + k, w, h - k * 2);
+    c.fillStyle = 'rgba(255,160,240,0.85)'; c.fillRect(x, y + h / 2 - 5 + k, w, 10 - k * 2);
+    c.fillStyle = '#ffffff'; c.fillRect(x, Math.round(y + h / 2 - 1), w, 2);
+    c.globalCompositeOperation = 'source-over';
+  }
+};
+
+// 8. ПРИНЦ ЗАРКУН: принц (1 фаза) → «смерть» → демон (2 фазы) → «смерть» → Истинный Глаз (4 фазы)
+const PRINCE_FORMS = {
+  1: { w: 22, h: 40, hp: 40, phases: 1, name: 'ПРИНЦ ЗАРКУН' },
+  2: { w: 80, h: 66, hp: 72, phases: 2, name: 'ДЕМОН ЗАРКУН' },
+  3: { w: 56, h: 56, hp: 124, phases: 4, name: 'ИСТИННЫЙ ГЛАЗ ЗАРКУНА' },
+};
 G.BossPrince = class extends G.Boss {
   constructor(game) {
-    super(game, 22, 40, 96, 'prince');
+    super(game, 22, 40, 40, 'prince');
     const A = this.arena, f = A.floor;
-    this.x = A.x + 360; this.y = f - 120;
-    this.alpha = 0; this.form = 1; this.cool = 60;
+    this.alpha = 0; this.cool = 60;
     this.spots = [[A.x + 90, f - 110], [A.x + 390, f - 110], [A.x + 240, f - 150], [A.x + 150, f - 50], [A.x + 330, f - 50], [A.x + 240, f - 90]];
-    this.introUpdate = () => { this.alpha = Math.min(1, this.st / 60); };
+    this.setupForm(game.finalStartForm || 1, game, true);
   }
-  hitTest(b) { return this.alpha > 0.5 && this.state !== 'transform' && G.overlap(this, b); }
-  onPhase2(game) { super.onPhase2(game); this.set('transform'); game.clearHostiles(); }
-  think(game) {
-    const p = game.player, A = this.arena;
-    this.facing = p.cx < this.cx ? -1 : 1;
-    if (this.form === 1) {
-      switch (this.state) {
-        case 'idle':
-          this.y += Math.sin(this.t * 0.06) * 0.3;
-          if (--this.cool <= 0) {
-            const r = Math.random(), ghosts = game.entities.filter((e) => e instanceof G.Ghost && !e.dead).length;
-            this.set(r < 0.3 ? 'vanish' : r < 0.6 ? 'ring' : r < 0.85 || ghosts >= 2 ? 'aim' : 'summon');
-          }
-          break;
-        case 'vanish':
-          if (this.st === 1) G.Audio.play('teleport');
-          this.alpha = this.st < 20 ? 1 - this.st / 18 : Math.min(1, (this.st - 20) / 18);
-          if (this.st === 20) { const s = G.pick(this.spots.filter((s) => Math.abs(s[0] - this.cx) > 50)); this.x = s[0] - this.w / 2; this.y = s[1] - this.h; }
-          if (this.st > 40) { this.set('idle'); this.cool = 20; }
-          break;
-        case 'ring':
-          if (this.st === 25 || this.st === 50) { this.ring(game, this.cx, this.cy, 12, 1.5, 'orb', this.st * 0.13); G.Audio.play('enemyShot'); }
-          if (this.st > 70) { this.set('idle'); this.cool = 45; }
-          break;
-        case 'aim':
-          if (this.st % 12 === 0 && this.st > 0 && this.st <= 36) { this.shoot(game, this.cx, this.y + 8, 2.8, 'orb', 0, { ghost: true }); G.Audio.play('enemyShot'); }
-          if (this.st > 55) { this.set('idle'); this.cool = 40; }
-          break;
-        case 'summon':
-          if (this.st === 30) { for (const s of [-1, 1]) { const g = new G.Ghost(this.cx + s * 34, this.cy); g.active = true; game.spawn(g); G.Particles.fx('fx_ring', this.cx + s * 34, this.cy - 8); } G.Audio.play('teleport'); }
-          if (this.st > 60) { this.set('idle'); this.cool = 50; }
-          break;
-        case 'transform': {
-          this.alpha = 1;
-          this.x = G.lerp(this.x, A.x + 240 - this.w / 2, 0.05);
-          this.y = G.lerp(this.y, game.cam.y + 50, 0.05);
-          if (this.st % 6 === 0) { G.Particles.fx('fx_ring', this.cx + G.rand(-10, 10), this.cy + G.rand(-10, 10)); game.shake(2, 6); }
-          if (this.st % 30 === 0) G.Audio.play('roar');
-          if (this.st === 110) {
-            this.form = 2; this.w = 80; this.h = 66;
-            this.x = A.x + 240 - 40; this.y = game.cam.y + 20;
-            game.flashScreen('#ff80e0', 16); G.Audio.play('explode'); G.Audio.music('final', true);
-            this.set('idle'); this.cool = 60;
-          }
-          break;
-        }
-      }
-    } else {
-      const top = game.cam.y + 18;
-      switch (this.state) {
-        case 'idle':
-          this.x = G.lerp(this.x, A.x + 240 + Math.sin(this.t * 0.015) * 150 - this.w / 2, 0.05);
-          this.y = G.lerp(this.y, top + Math.sin(this.t * 0.04) * 8, 0.05);
-          if (--this.cool <= 0) { const r = Math.random(); this.set(r < 0.35 ? 'lasers' : r < 0.65 ? 'spiral' : 'diveAim'); }
-          break;
-        case 'lasers':
-          if (this.st === 1) { const off = Math.random() * 100; for (let i = 0; i < 4; i++) game.spawn(new G.Beam(A.x + 40 + ((off + i * 110) % 400), game.cam.y, A.floor, 50, 40, 18)); }
-          if (this.st === 60) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, 40, 30, 18));
-          if (this.st > 130) { this.set('idle'); this.cool = 40; }
-          break;
-        case 'spiral':
-          if (this.st % 5 === 0 && this.st < 90) {
-            const a = this.st * 0.21;
-            for (const off of [0, Math.PI]) game.spawn(new G.EnemyShot(this.cx, this.cy + 6, Math.cos(a + off) * 1.7, Math.sin(a + off) * 1.7, 'orb', { ghost: true, life: 260 }));
-            if (this.st % 15 === 0) G.Audio.play('enemyShot');
-          }
-          if (this.st > 110) { this.set('idle'); this.cool = 40; }
-          break;
-        case 'diveAim':
-          this.x = G.lerp(this.x, G.clamp(p.cx - this.w / 2, this.L, this.R - this.w), 0.08);
-          if (this.st === 20) game.spawn(new G.Warning(this.x, this.y, this.w, A.floor - this.y, 26));
-          if (this.st > 46) { this.set('dive'); this.vy = 2; }
-          break;
-        case 'dive':
-          this.vy += 0.7; this.y += this.vy;
-          if (this.bottom >= A.floor) {
-            this.y = A.floor - this.h; game.shake(7, 20); G.Audio.play('explode');
-            game.spawn(new G.Shockwave(this.x, A.floor, -1, 3.2)); game.spawn(new G.Shockwave(this.x + this.w, A.floor, 1, 3.2));
-            this.ring(game, this.cx, this.cy, 10, 1.7, 'orb', 0);
-            this.set('rest');
-          }
-          break;
-        case 'rest': this.dmgMul = 1.3; if (this.st > 50) { this.dmgMul = 1; this.set('rise'); } break;
-        case 'rise': this.y = G.lerp(this.y, top, 0.06); if (this.st > 50) { this.set('idle'); this.cool = 30; } break;
-      }
+  setupForm(form, game, first) {
+    const F = PRINCE_FORMS[form], A = this.arena;
+    this.form = form; this.w = F.w; this.h = F.h; this.maxHp = this.hp = F.hp; this.phases = F.phases; this.ph = 1; this.name = F.name;
+    this.cool = 60; this.dmgMul = 1; game.bossDark = false;
+    if (form === 1) { this.x = A.x + 360; this.y = A.floor - 120; this.alpha = 0; this.introUpdate = () => { this.alpha = Math.min(1, this.st / 60); }; }
+    else { this.x = A.x + 240 - this.w / 2; this.y = game.cam.y + (form === 2 ? 20 : 30); this.alpha = 1; this.introUpdate = null; }
+    if (!first) {
+      G.UI.bossBanner(this.name);
+      G.Audio.music(form === 3 ? 'final3' : 'final', true);
+      game.flashScreen(form === 3 ? '#ffffff' : '#ff80e0', 20); G.Audio.play('explode'); game.shake(8, 30);
+      this.set('idle');
     }
-    if (this.alpha > 0.5 && this.state !== 'transform') this.contact(game, this.form === 2 && this.state === 'dive' ? 2 : 1, this.form === 2 ? { x: this.x + 10, y: this.y + 8, w: this.w - 20, h: this.h - 14 } : this);
+    game.onFinalForm && game.onFinalForm(form);
   }
+  hitTest(b) { return this.alpha > 0.5 && this.state !== 'reborn' && !this.closed && G.overlap(this, b); }
+  canRage() { return super.canRage() && this.state !== 'blink'; }
+  rageText(ph) {
+    if (this.form === 2) return 'ДЕМОН ОБНАЖАЕТ КЛЫКИ!';
+    return ['', '', 'ГЛАЗ ПРИЗЫВАЕТ БУРЮ!', 'МИР ПОГРУЖАЕТСЯ ВО ТЬМУ!', 'ПОСЛЕДНЯЯ ЯРОСТЬ ЗАРКУНА!'][ph];
+  }
+  onRage(game, ph) { if (this.form === 3) game.bossDark = ph === 3; this.closed = false; }
+  rageMove(game) { this.x = G.lerp(this.x, this.arena.x + 240 - this.w / 2, 0.05); this.y = G.lerp(this.y, game.cam.y + 30, 0.05); }
+  // «смерть» первых двух форм — ложная
+  updateDying(game) {
+    if (this.form >= 3) { game.bossDark = false; super.updateDying(game); return; }
+    this.dyingT++;
+    this.flash = this.dyingT % 8 < 4 ? 2 : 0;
+    if (this.dyingT % 7 === 0 && this.dyingT < 110) { G.Particles.explosion(this.x + Math.random() * this.w, this.y + Math.random() * this.h); G.Audio.play('explode'); game.shake(3, 6); }
+    if (this.dyingT === 120) {
+      G.Particles.explosion(this.cx, this.cy, true); G.Audio.play('explode');
+      game.shake(8, 25); game.flashScreen('#ffffff', 20);
+      this.dying = false; this.alpha = 0; this.set('reborn');
+    }
+  }
+  reborn(game) {
+    const A = this.arena, cx = A.x + 240, cy = game.cam.y + 80, next = this.form + 1;
+    const T = next === 2 ? 220 : 280;
+    // тишина... потом тьма стягивается в центр
+    if (this.st > 60 && this.st % 3 === 0) {
+      const a = Math.random() * Math.PI * 2, r = 120 + Math.random() * 60;
+      G.Particles.add({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, vx: -Math.cos(a) * 3, vy: -Math.sin(a) * 3, life: 38, color: next === 3 ? '#ffffff' : '#ff60d0', kind: 'spark', add: true });
+    }
+    if (this.st === 70) { G.Audio.play('teleport'); G.UI.toast(next === 2 ? 'Ха-ха-ха... ЭТО ЕЩЁ НЕ КОНЕЦ!' : 'ВЫ НЕ ПОНИМАЕТЕ... Я — САМ ТРЕТИЙ ГЛАЗ!'); }
+    if (this.st > 120 && this.st % 20 === 0) { G.Audio.play('roar'); game.shake(3 + (this.st - 120) / 30, 12); }
+    if (next === 3 && this.st === 150) game.bossDark = true;
+    if (this.st >= T) { game.bossDark = false; this.setupForm(next, game, false); }
+  }
+
+  think(game) {
+    const p = game.player;
+    this.facing = p.cx < this.cx ? -1 : 1;
+    if (this.state === 'reborn') { this.reborn(game); return; }
+    if (this.form === 1) this.form1(game, p);
+    else if (this.form === 2) this.form2(game, p);
+    else this.form3(game, p);
+    if (this.alpha > 0.5 && !this.closed) this.contact(game, this.state === 'dive' || this.state === 'crash' ? 2 : 1, this.form === 2 ? { x: this.x + 10, y: this.y + 8, w: this.w - 20, h: this.h - 14 } : this.form === 3 ? { x: this.x + 8, y: this.y + 8, w: this.w - 16, h: this.h - 16 } : this);
+  }
+  form1(game, p) {
+    switch (this.state) {
+      case 'idle':
+        this.y += Math.sin(this.t * 0.06) * 0.3;
+        if (--this.cool <= 0) {
+          const r = Math.random(), ghosts = game.entities.filter((e) => e instanceof G.Ghost && !e.dead).length;
+          this.set(r < 0.3 ? 'vanish' : r < 0.6 ? 'ring' : r < 0.85 || ghosts >= 2 ? 'aim' : 'summon');
+        }
+        break;
+      case 'vanish':
+        if (this.st === 1) G.Audio.play('teleport');
+        this.alpha = this.st < 20 ? 1 - this.st / 18 : Math.min(1, (this.st - 20) / 18);
+        if (this.st === 20) { const sp = G.pick(this.spots.filter((q) => Math.abs(q[0] - this.cx) > 50)); this.x = sp[0] - this.w / 2; this.y = sp[1] - this.h; }
+        if (this.st > 40) { this.set('idle'); this.cool = 20; }
+        break;
+      case 'ring':
+        if (this.st === 25 || this.st === 50) { this.ring(game, this.cx, this.cy, 12, 1.5, 'orb', this.st * 0.13); G.Audio.play('enemyShot'); }
+        if (this.st > 70) { this.set('idle'); this.cool = 45; }
+        break;
+      case 'aim':
+        if (this.st % 12 === 0 && this.st > 0 && this.st <= 36) { this.shoot(game, this.cx, this.y + 8, 2.8, 'orb', 0, { ghost: true }); G.Audio.play('enemyShot'); }
+        if (this.st > 55) { this.set('idle'); this.cool = 40; }
+        break;
+      case 'summon':
+        if (this.st === 30) { for (const sd of [-1, 1]) { const g = new G.Ghost(this.cx + sd * 34, this.cy); g.active = true; game.spawn(g); G.Particles.fx('fx_ring', this.cx + sd * 34, this.cy - 8); } G.Audio.play('teleport'); }
+        if (this.st > 60) { this.set('idle'); this.cool = 50; }
+        break;
+    }
+  }
+  form2(game, p) {
+    const A = this.arena, top = game.cam.y + 18, two = this.ph >= 2;
+    switch (this.state) {
+      case 'idle':
+        this.x = G.lerp(this.x, A.x + 240 + Math.sin(this.t * 0.015) * 150 - this.w / 2, 0.05);
+        this.y = G.lerp(this.y, top + Math.sin(this.t * 0.04) * 8, 0.05);
+        if (--this.cool <= 0) {
+          const r = Math.random();
+          if (two && r < 0.4) this.set(Math.random() < 0.5 ? 'crossfire' : 'ghostStorm');
+          else this.set(r < 0.5 ? 'lasers' : r < 0.75 ? 'spiral' : 'diveAim');
+        }
+        break;
+      case 'lasers':
+        if (this.st === 1) { const off = Math.random() * 100; for (let i = 0; i < 4; i++) game.spawn(new G.Beam(A.x + 40 + ((off + i * 110) % 400), game.cam.y, A.floor, 50, 40, 18)); }
+        if (this.st === 60) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, 40, 30, 18));
+        if (this.st > 130) { this.set('idle'); this.cool = two ? 25 : 40; }
+        break;
+      case 'crossfire': // два залпа лучей «ёлочкой», между ними — луч по герою
+        if (this.st === 1) for (let i = 0; i < 5; i++) game.spawn(new G.Beam(A.x + 30 + i * 100, game.cam.y, A.floor, 44, 30, 18));
+        if (this.st === 45) for (let i = 0; i < 4; i++) game.spawn(new G.Beam(A.x + 80 + i * 100, game.cam.y, A.floor, 44, 30, 18));
+        if (this.st === 30 || this.st === 90) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, 36, 24, 18));
+        if (this.st > 150) { this.set('idle'); this.cool = 30; }
+        break;
+      case 'ghostStorm':
+        if (this.st === 20) { for (const sd of [-1, 0, 1]) { const g = new G.Ghost(this.cx + sd * 50, this.cy + 20); g.active = true; game.spawn(g); G.Particles.fx('fx_ring', this.cx + sd * 50, this.cy + 12); } G.Audio.play('teleport'); }
+        if (this.st === 50 || this.st === 80) { this.ring(game, this.cx, this.cy + 10, 14, 1.6, 'orb', this.st * 0.1); G.Audio.play('enemyShot'); }
+        if (this.st > 110) { this.set('idle'); this.cool = 40; }
+        break;
+      case 'spiral':
+        if (this.st % (two ? 4 : 5) === 0 && this.st < 90) {
+          const a = this.st * 0.21;
+          for (const off of two ? [0, Math.PI * 2 / 3, Math.PI * 4 / 3] : [0, Math.PI]) game.spawn(new G.EnemyShot(this.cx, this.cy + 6, Math.cos(a + off) * 1.7, Math.sin(a + off) * 1.7, 'orb', { ghost: true, life: 260 }));
+          if (this.st % 15 === 0) G.Audio.play('enemyShot');
+        }
+        if (this.st > 110) { this.set('idle'); this.cool = 40; }
+        break;
+      case 'diveAim':
+        this.x = G.lerp(this.x, G.clamp(p.cx - this.w / 2, this.L, this.R - this.w), 0.08);
+        if (this.st === 20) game.spawn(new G.Warning(this.x, this.y, this.w, A.floor - this.y, 26));
+        if (this.st > 46) { this.set('dive'); this.vy = 2; }
+        break;
+      case 'dive':
+        this.vy += 0.7; this.y += this.vy;
+        if (this.bottom >= A.floor) {
+          this.y = A.floor - this.h; game.shake(7, 20); G.Audio.play('explode');
+          game.spawn(new G.Shockwave(this.x, A.floor, -1, 3.2)); game.spawn(new G.Shockwave(this.x + this.w, A.floor, 1, 3.2));
+          this.ring(game, this.cx, this.cy, 10, 1.7, 'orb', 0);
+          this.set('rest');
+        }
+        break;
+      case 'rest': this.dmgMul = 1.3; if (this.st > (two ? 40 : 50)) { this.dmgMul = 1; this.set('rise'); } break;
+      case 'rise': this.y = G.lerp(this.y, top, 0.06); if (this.st > 50) { this.set('idle'); this.cool = 30; } break;
+    }
+  }
+  // Истинный Глаз: 1 — Взгляд, 2 — Буря, 3 — Тьма, 4 — Ярость
+  form3(game, p) {
+    const A = this.arena, top = game.cam.y + 26, ph = this.ph;
+    const cd = [0, 50, 40, 40, 26][ph];
+    switch (this.state) {
+      case 'idle': {
+        const sp = [0, 0.012, 0.022, 0.016, 0.026][ph];
+        this.x = G.lerp(this.x, A.x + 240 + Math.sin(this.t * sp) * 160 - this.w / 2, 0.05);
+        this.y = G.lerp(this.y, top + Math.sin(this.t * 0.05) * 10, 0.05);
+        if (--this.cool <= 0) {
+          const pool = [null, ['stare', 'tears', 'tears'], ['meteors', 'spiral', 'stare'], ['blink', 'ghosts', 'tears', 'blink'], ['hbeam', 'crash', 'spiral', 'stare', 'hbeam']][ph];
+          this.set(G.pick(pool));
+        }
+        break;
+      }
+      case 'stare': // лучи из зрачка по герою
+        for (const k of [1, 28, 55]) if (this.st === k) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, ph >= 4 ? 26 : 34, 20, 18));
+        if (this.st > 100) { this.set('idle'); this.cool = cd; }
+        break;
+      case 'tears': // прицельные очереди
+        if (this.st % 14 === 0 && this.st <= 56) { for (const k of [-0.2, 0, 0.2]) this.shoot(game, this.cx, this.cy, 2.7, 'orb', k, { ghost: true }); G.Audio.play('enemyShot'); }
+        if (this.st > 80) { this.set('idle'); this.cool = cd; }
+        break;
+      case 'meteors':
+        if (this.st === 10) { G.Audio.play('roar'); game.shake(5, 50); this.rain(game, 9, 'rock', 26); }
+        if (this.st === 50) { this.ring(game, this.cx, this.cy, 14, 1.6, 'orb', 0.3); G.Audio.play('enemyShot'); }
+        if (this.st > 90) { this.set('idle'); this.cool = cd; }
+        break;
+      case 'spiral':
+        if (this.st % 4 === 0 && this.st < 96) {
+          const a = this.st * (ph >= 4 ? 0.25 : 0.19);
+          for (const off of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) game.spawn(new G.EnemyShot(this.cx, this.cy, Math.cos(a + off) * 1.6, Math.sin(a + off) * 1.6, 'orb', { ghost: true, life: 240 }));
+          if (this.st % 16 === 0) G.Audio.play('enemyShot');
+        }
+        if (this.st > 116) { this.set('idle'); this.cool = cd; }
+        break;
+      case 'blink': // глаз закрывается, исчезает во тьме и открывается в другом месте
+        this.closed = this.st < 50;
+        if (this.st === 1) G.Audio.play('teleport');
+        if (this.st === 25) { const sp = G.pick(this.spots); this.x = sp[0] - this.w / 2; this.y = Math.min(sp[1] - this.h, A.floor - 100); }
+        if (this.st === 50) { this.ring(game, this.cx, this.cy, 16, 1.7, 'orb', Math.random()); G.Audio.play('enemyShot'); }
+        if (this.st > 80) { this.closed = false; this.set('idle'); this.cool = cd; }
+        break;
+      case 'ghosts':
+        if (this.st === 20) { for (const sd of [-1, 1]) { const g = new G.Ghost(this.cx + sd * 60, this.cy + 10); g.active = true; game.spawn(g); } G.Audio.play('teleport'); }
+        if (this.st > 60) { this.set('idle'); this.cool = cd; }
+        break;
+      case 'hbeam': // луч над полом — спасайся на платформах
+        if (this.st === 1) { game.spawn(new G.HBeam(A.x + 16, A.floor - 30, G.W - 32, 30, 66, 40)); G.UI.toast('НАВЕРХ, НА ПЛАТФОРМЫ!'); }
+        if (this.st === 70) { this.ring(game, this.cx, this.cy, 12, 1.5, 'orb', 0.5); G.Audio.play('enemyShot'); }
+        if (this.st > 120) { this.set('idle'); this.cool = cd; }
+        break;
+      case 'crash': // падает на арену и снова взлетает
+        if (this.st < 30) { this.x = G.lerp(this.x, G.clamp(p.cx - this.w / 2, this.L, this.R - this.w), 0.1); if (this.st === 6) game.spawn(new G.Warning(this.x, this.y, this.w, A.floor - this.y, 24)); this.vy = 2; break; }
+        if (this.bottom < A.floor) { this.vy += 0.8; this.y = Math.min(this.y + this.vy, A.floor - this.h); break; }
+        if (this.vy > 0) {
+          this.vy = 0; game.shake(8, 20); G.Audio.play('explode');
+          game.spawn(new G.Shockwave(this.x, A.floor, -1, 3.4)); game.spawn(new G.Shockwave(this.x + this.w, A.floor, 1, 3.4));
+          this.ring(game, this.cx, this.cy, 12, 1.8, 'orb', 0);
+          this.restT = 0;
+        }
+        this.dmgMul = 1.3;
+        if (++this.restT > 40) { this.dmgMul = 1; this.y = G.lerp(this.y, top, 0.08); if (this.restT > 90) { this.set('idle'); this.cool = cd; } }
+        break;
+    }
+  }
+
   draw(c) {
     const pa = c.globalAlpha;
     c.globalAlpha = pa * this.alpha;
+    if (this.state === 'reborn') { c.globalAlpha = pa; return; }
     if (this.form === 1) {
       G.Gfx.glow(this.cx, this.cy, 26, '#c040ff', 0.35);
       const n = ['ring', 'aim', 'summon'].includes(this.state) ? 'b_prince_cast0' : G.Art.frame('b_prince', this.t);
       this.spr(n, this.cx, this.bottom + Math.round(Math.sin(this.t * 0.08) * 2), this.facing < 0);
-      if (this.state === 'transform' && this.t % 4 < 2) G.Gfx.glow(this.cx, this.cy, 40, '#ff60d0', 0.6);
-    } else {
-      G.Gfx.glow(this.cx, this.cy, 60, '#ff40c0', 0.3);
-      const n = this.state === 'rest' ? 'b_demon_rest0' : this.state === 'spiral' ? 'b_demon_mouth0' : 'b_demon0';
+    } else if (this.form === 2) {
+      G.Gfx.glow(this.cx, this.cy, 60, this.ph >= 2 ? '#ff3060' : '#ff40c0', 0.3);
+      const n = this.state === 'rest' ? 'b_demon_rest0' : this.state === 'spiral' || this.state === 'ghostStorm' ? 'b_demon_mouth0' : 'b_demon0';
       this.spr(n, this.cx, this.cy);
-    }
+    } else this.drawEye(c);
     c.globalAlpha = pa;
+  }
+  // Истинный Глаз рисуется процедурно, пиксельными дисками
+  drawEye(c) {
+    const cx = Math.round(this.cx), cy = Math.round(this.cy), ph = this.ph, t = this.t;
+    const IRIS = [null, '#b040ff', '#ff8a20', '#30e0c0', '#ff2040'][ph];
+    const disc = (x, y, r, col) => { c.fillStyle = col; for (let dy = -r; dy <= r; dy++) { const w = Math.round(Math.sqrt(r * r - dy * dy)); c.fillRect(x - w, y + dy, w * 2 + 1, 1); } };
+    G.Gfx.glow(cx, cy, 52 + Math.sin(t * 0.1) * 4, IRIS, 0.45);
+    // вращающиеся осколки-кристаллы
+    for (let i = 0; i < 6; i++) {
+      const a = t * 0.03 * (ph >= 4 ? 2 : 1) + (i * Math.PI) / 3, r = 40 + Math.sin(t * 0.05 + i) * 4;
+      const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r * 0.8);
+      c.fillStyle = '#2a1040'; c.fillRect(x - 3, y - 4, 6, 8);
+      c.fillStyle = IRIS; c.fillRect(x - 2, y - 3, 4, 6);
+      c.fillStyle = '#ffffff'; c.fillRect(x - 1, y - 2, 1, 2);
+    }
+    const white = this.flash >= 4 && !this.dying;
+    disc(cx, cy, 28, '#2a0a30');
+    disc(cx, cy, 26, white ? '#ffffff' : '#f0d8e8');
+    if (!white) {
+      // прожилки
+      c.fillStyle = '#d04060';
+      for (let i = 0; i < 8; i++) { const a = (i * Math.PI) / 4 + 0.3; for (let k = 16; k < 25; k++) c.fillRect(Math.round(cx + Math.cos(a + k * 0.02) * k), Math.round(cy + Math.sin(a + k * 0.02) * k), 1, 1); }
+      c.fillStyle = '#c8a8c0';
+      for (let dy = 14; dy <= 26; dy++) { const w = Math.round(Math.sqrt(26 * 26 - dy * dy)); c.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
+    }
+    // зрачок следит за героем
+    const p = G.game.player, ang = Math.atan2(p.cy - cy, p.cx - cx), d = Math.min(9, Math.hypot(p.cx - cx, p.cy - cy) / 12);
+    const ix = Math.round(cx + Math.cos(ang) * d), iy = Math.round(cy + Math.sin(ang) * d);
+    disc(ix, iy, 13, '#140818');
+    disc(ix, iy, 12, white ? '#ffffff' : IRIS);
+    disc(ix, iy, 8, white ? '#ffffff' : '#ffffff');
+    disc(ix, iy, 7, IRIS);
+    c.fillStyle = '#0a0410';
+    const slit = ph >= 4 ? 2 : 3;
+    c.fillRect(ix - slit + 1, iy - 8, slit * 2 - 1, 17);
+    c.fillStyle = '#ffffff'; c.fillRect(ix - 6, iy - 6, 3, 3); c.fillRect(ix + 4, iy + 3, 1, 1);
+    // веки: закрытый глаз
+    const lid = this.closed ? 1 : this.state === 'blink' && this.st < 60 ? 1 - (this.st - 50) / 10 : 0;
+    if (lid > 0) {
+      const h = Math.round(28 * Math.min(1, lid));
+      c.fillStyle = '#3a1450';
+      for (let dy = -28; dy < -28 + h; dy++) { const w = Math.round(Math.sqrt(Math.max(0, 28 * 28 - dy * dy))); c.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
+      for (let dy = 28; dy > 28 - h; dy--) { const w = Math.round(Math.sqrt(Math.max(0, 28 * 28 - dy * dy))); c.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
+      if (lid >= 1) { c.fillStyle = '#ff60d0'; c.fillRect(cx - 24, cy, 49, 1); }
+    }
   }
 };
 

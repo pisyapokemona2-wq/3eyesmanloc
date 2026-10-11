@@ -466,6 +466,9 @@ G.Audio = (() => {
     },
   };
 
+  // третья форма финального босса — та же токката, быстрее и плотнее
+  SONGS.final3 = Object.assign({}, SONGS.final, { bpm: 168, form: ['F2', 'F', 'F2', 'F'] });
+
   let cur = null, pendingTrack = null, built = null, step = 0, nextTime = 0, timer = null, trackGain = null, evIdx = 0;
   function scheduler() {
     if (!ctx || !built) return;

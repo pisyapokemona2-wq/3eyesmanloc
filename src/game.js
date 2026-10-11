@@ -44,6 +44,9 @@ G.Game = class Game {
   // ---------------------------------------------------------------- уровни
   startLevel(i, keepCheckpoint = false) {
     this.levelIdx = i;
+    this.bossDark = false;
+    this.finalForm = 0;
+    this.finalStartForm = G.Save.data.finalCk || 1;
     const def = G.LEVELS[i];
     this.level = new G.Level(def);
     this.entities = [];
@@ -128,7 +131,7 @@ G.Game = class Game {
     G.Particles.sparks((j % L.w) * 16 + 8, ((j / L.w) | 0) * 16 + 8, 12, '#fff3a0', 2);
     G.UI.toast(`ТАЙНИК НАЙДЕН! ${this.levelSecrets}/${L.secrets.length}`);
   }
-  bossTrack() { return this.levelIdx === G.LEVELS.length - 1 ? 'final' : 'boss'; }
+  bossTrack() { return this.levelIdx === G.LEVELS.length - 1 ? ((this.finalForm || this.finalStartForm || 1) >= 3 ? 'final3' : 'final') : 'boss'; }
   lifeTaken(s) { return !!(this.takenLives && this.takenLives.has(this.levelIdx + ':' + s.tx + ':' + s.ty)); }
 
   // ---------------------------------------------------------------- API для сущностей
@@ -191,7 +194,36 @@ G.Game = class Game {
       else if (e.isEnemy && !e.isBoss && !e.dead) { e.dead = true; G.Particles.explosion(e.cx, e.cy); }
     }
   }
+  isFinalFight() { return this.bossStarted && this.levelIdx === G.LEVELS.length - 1 && this.boss && !this.boss.dead; }
+  // Финальный бой: смерть не тратит жизни, бой начинается заново.
+  // После 10 неудачных попыток пройденная форма босса сохраняется (1-я, затем 2-я); 3-ю форму — только целиком.
+  onFinalForm(form) {
+    const s = G.Save.data;
+    this.finalForm = form;
+    s.finalReached = Math.max(s.finalReached || 1, form);
+    if ((s.finalTries || 0) >= 10 && form > (s.finalCk || 1)) {
+      s.finalCk = form; s.finalTries = 0;
+      this.later(150, () => G.UI.toast(`ПРОГРЕСС СОХРАНЁН: бой начнётся с ${form}-й формы`));
+    }
+    G.Save.store();
+  }
+  restartFinal() {
+    const s = G.Save.data, A = this.arena;
+    this.finalStartForm = s.finalCk || 1;
+    this.checkpoint = { x: A.x + 80, y: A.floor };
+    this.startLevel(this.levelIdx, true);
+    this.setState('play');
+    this.finalRetry = true;
+  }
   onPlayerDeath() {
+    if (this.isFinalFight()) {
+      const s = G.Save.data;
+      s.finalTries = (s.finalTries || 0) + 1;
+      if (s.finalTries >= 10 && (s.finalReached || 1) > (s.finalCk || 1)) { s.finalCk = Math.min(3, (s.finalCk || 1) + 1); s.finalTries = 0; }
+      G.Save.store();
+      this.fadeTo(() => this.restartFinal());
+      return;
+    }
     this.lives--;
     if (this.lives < 0) this.fadeTo(() => this.setState('gameover'));
     else this.fadeTo(() => { this.startLevel(this.levelIdx, true); this.setState('intro'); });
@@ -290,6 +322,11 @@ G.Game = class Game {
       G.Audio.play('roar');
       this.shake(4, 30);
       G.UI.bossBanner(this.boss.name);
+      if (this.levelIdx === G.LEVELS.length - 1) {
+        const sv = G.Save.data, tries = sv.finalTries || 0, ck = sv.finalCk || 1;
+        if (this.finalRetry || tries > 0) G.UI.toast(`ПОПЫТКА ${tries + 1}` + (ck < 3 ? (tries < 10 ? ` · сохранение формы через ${10 - tries}` : ' · следующая форма сохранится') : ''));
+        this.finalRetry = false;
+      }
       for (const e of this.entities) if (e.isEnemy && !e.isBoss && e.x > A.x) e.dead = true;
     }
     if (this.waitAbility && this.abil.has(G.LEVELS[this.levelIdx].unlock)) { this.waitAbility = false; this.bossDoneT = 1; }
@@ -301,7 +338,7 @@ G.Game = class Game {
         this.setState('clear');
         const s = G.Save.data;
         s.unlocked = Math.max(s.unlocked, Math.min(G.LEVELS.length, this.levelIdx + 2));
-        if (this.levelIdx === G.LEVELS.length - 1) s.cleared = true;
+        if (this.levelIdx === G.LEVELS.length - 1) { s.cleared = true; s.finalCk = 1; s.finalTries = 0; s.finalReached = 1; }
         s.bestCoins = Math.max(s.bestCoins, this.totalCoins);
         G.Save.store();
       });
@@ -418,7 +455,7 @@ G.Game = class Game {
   // Темнота пещер: маска 480×270 с «дырками» от источников света
   renderLighting(cx, cy) {
     const L = this.level;
-    if (!L.cfg.dark) return;
+    if (!L.cfg.dark && !this.bossDark) return;
     const cv = this.lightCv, lc = cv.getContext('2d');
     lc.globalCompositeOperation = 'source-over';
     lc.clearRect(0, 0, G.W, G.H);
@@ -442,7 +479,8 @@ G.Game = class Game {
     for (const e of this.entities) {
       if (e instanceof G.EyeShot) hole(e.cx, e.cy, e.charged ? 50 : 30, 0.8);
       else if (e instanceof G.EnemyShot) hole(e.cx, e.cy, 22, 0.7);
-      else if (e.isBoss) hole(e.cx, e.cy, 110, 0.9);
+      else if (e.isBoss) hole(e.cx, e.cy, this.bossDark ? 34 : 110, this.bossDark ? 0.6 : 0.9);
+      else if (e instanceof G.Beam || e instanceof G.Ghost) hole(e.cx, e.cy, 26, 0.7);
       else if (e instanceof G.Crystal || e instanceof G.Torch) hole(e.cx, e.cy, 40, 0.8);
     }
     const c = G.Gfx.ctx;
