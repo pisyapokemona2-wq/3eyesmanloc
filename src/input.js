@@ -2,12 +2,13 @@
 // Ввод: клавиатура, геймпад и сенсорные кнопки сводятся к набору «действий».
 G.Input = (() => {
   const map = {
-    left: ['ArrowLeft', 'KeyA'],
-    right: ['ArrowRight', 'KeyD'],
-    up: ['ArrowUp', 'KeyW'],
-    down: ['ArrowDown', 'KeyS'],
+    left: ['ArrowLeft'],
+    right: ['ArrowRight'],
+    up: ['ArrowUp'],
+    down: ['ArrowDown'],
     jump: ['KeyZ', 'Space', 'KeyK'],
     shoot: ['KeyX', 'KeyJ'],
+    shootUp: ['KeyA', 'KeyU'],
     spear: ['KeyC', 'KeyL'],
     special: ['KeyV', 'KeyI'],
     dash: ['ShiftLeft', 'ShiftRight', 'KeyF'],
@@ -17,7 +18,7 @@ G.Input = (() => {
   };
   // Кнопки стандартного геймпада
   const padMap = {
-    jump: [0], shoot: [2], spear: [1], special: [3], dash: [5, 7], pause: [9],
+    jump: [0], shoot: [2], shootUp: [4, 6], spear: [1], special: [3], dash: [5, 7], pause: [9],
     confirm: [0, 9], back: [1], up: [12], down: [13], left: [14], right: [15],
   };
   const held = new Set();
@@ -61,7 +62,11 @@ G.Input = (() => {
         prev[a] = cur[a];
         let v = !!pad[a] || !!touch[a];
         let l = false;
-        for (const c of map[a]) {
+        // ↑ — тоже прыжок (можно выключить в меню)
+        const upJ = a === 'jump' && G.Save.data.upJump !== false;
+        const codes = upJ ? map.jump.concat(map.up) : map[a];
+        if (upJ && (touch.up || pad.up)) v = true;
+        for (const c of codes) {
           if (held.has(c)) v = true;
           if (latched.has(c)) l = true;
         }

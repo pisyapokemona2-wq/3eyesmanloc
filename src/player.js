@@ -3,7 +3,7 @@
 // Способности открываются по ходу игры (см. G.ABILITIES).
 G.ABILITIES = [
   { id: 'spear', name: 'КРАСНЫЙ КОНДОР', key: 'C', desc: ['Брось копьё — оно поражает врагов,', 'а воткнувшись в стену, становится ступенькой.', 'C ещё раз — вернуть копьё.'] },
-  { id: 'shot', name: 'ВЗГЛЯД ТРЕТЬЕГО ГЛАЗА', key: 'X', desc: ['Третий глаз стреляет сгустками энергии.', '↑ + X — стрельба по диагонали вверх.'] },
+  { id: 'shot', name: 'ВЗГЛЯД ТРЕТЬЕГО ГЛАЗА', key: 'X', desc: ['Третий глаз стреляет сгустками энергии.', 'A — стрельба по диагонали вверх.'] },
   { id: 'djump', name: 'ДВОЙНОЙ ПРЫЖОК', key: 'Z', desc: ['Прыгни ещё раз прямо в воздухе.'] },
   { id: 'dash', name: 'РЫВОК', key: 'SHIFT', desc: ['Стремительный рывок, неуязвимый для атак.', 'Пробивает треснувшие стены.'] },
   { id: 'charge', name: 'ЗАРЯД ВЗГЛЯДА', key: 'X', desc: ['Удерживай X, чтобы зарядить', 'пробивающий выстрел огромной силы.'] },
@@ -156,7 +156,7 @@ G.Player = class Player extends G.Entity {
     this.deathT = 0;
     this.airJumps = 0; this.flipT = 0;
     this.dashT = 0; this.canDash = true; this.dashCd = 0;
-    this.upWait = 0; this.upRecent = 0; this.shootRecent = 0; this.upJump = false; this.downHold = 0;
+    this.downHold = 0;
     this.wallDir = 0; this.wallLock = 0;
     this.pounding = false;
     this.inWater = false;
@@ -226,7 +226,7 @@ G.Player = class Player extends G.Entity {
       if (this.deathT === 110) game.onPlayerDeath();
       return;
     }
-    for (const k of ['invuln', 'stun', 'slow', 'shotCd', 'throwT', 'shootAnim', 'wallLock', 'dashCd', 'flipT', 'landT', 'upRecent', 'shootRecent']) if (this[k] > 0) this[k]--;
+    for (const k of ['invuln', 'stun', 'slow', 'shotCd', 'throwT', 'shootAnim', 'wallLock', 'dashCd', 'flipT', 'landT']) if (this[k] > 0) this[k]--;
 
     const locked = this.controlLocked || game.state !== 'play' || this.winT > 0;
     const can = this.stun <= 0 && !locked;
@@ -302,17 +302,7 @@ G.Player = class Player extends G.Entity {
     // --- ПРЫЖКИ
     if (this.onGround || this.inWater) { this.coyote = 6; this.airJumps = 0; this.canDash = true; }
     else if (this.coyote > 0) this.coyote--;
-    // ↑ тоже прыгает, но с окном в 4 кадра: если за это время нажат X — это выстрел вверх, а не прыжок
-    let jumpPress = can && I.pressed('jump');
-    if (I.pressed('up')) this.upRecent = 10;
-    if (I.pressed('shoot')) this.shootRecent = 10;
-    if (G.Save.data.upJump !== false && can) {
-      if (I.pressed('up') && !I.down('shoot') && this.shootRecent <= 0) this.upWait = 4;
-      if (this.upWait > 0) {
-        if (I.down('shoot')) this.upWait = 0;
-        else if (--this.upWait === 0) { jumpPress = true; this.upJump = true; }
-      }
-    } else this.upWait = 0;
+    const jumpPress = can && I.pressed('jump');
     if (jumpPress) this.jumpBuf = 7; else if (this.jumpBuf > 0) this.jumpBuf--;
     this.dropping = false;
     // удар сверху: просто ↓ в воздухе (или ↓+прыжок)
@@ -365,16 +355,15 @@ G.Player = class Player extends G.Entity {
       G.Audio.play('spring');
       G.Particles.fx('fx_ring', this.cx, this.bottom);
     }
-    const holding = I.down('jump') || (this.upJump && I.down('up'));
-    if (this.jumpHeld && !holding && this.vy < -2 && !this.springBoost) { this.vy *= 0.5; this.jumpHeld = false; }
-    if (this.vy >= 0) { this.jumpHeld = false; this.upJump = false; }
+    if (this.jumpHeld && !I.down('jump') && this.vy < -2 && !this.springBoost) { this.vy *= 0.5; this.jumpHeld = false; }
+    if (this.vy >= 0) this.jumpHeld = false;
 
     // гравитация
     if (this.dashT <= 0) {
       if (this.pounding) this.vy = Math.min(this.vy + 0.9, 9);
       else if (this.inWater) this.vy = Math.min(this.vy + 0.12, 1.4);
       else {
-        const g = Math.abs(this.vy) < 1.1 && (I.down('jump') || (this.upJump && I.down('up'))) ? 0.24 : 0.36;
+        const g = Math.abs(this.vy) < 1.1 && I.down('jump') ? 0.24 : 0.36;
         this.vy = Math.min(this.vy + g, 6.6);
         if (this.wallDir !== 0 && this.vy > 1.1) { this.vy = 1.1; if (this.t % 5 === 0) G.Particles.add({ x: this.wallDir > 0 ? this.x + this.w : this.x, y: this.y + 8, vy: 0.3, life: 14, color: '#d8ccbc' }); }
       }
@@ -458,17 +447,19 @@ G.Player = class Player extends G.Entity {
     if (!this.has('shot')) return;
     const I = G.Input, st = game.stats;
     const ey = this.y + (this.crouching ? 2 : 4), ex = this.cx + this.facing * 5;
-    const up = (I.down('up') || this.upRecent > 0) && !this.crouching ? -Math.PI / 4 : 0;
+    const fireDown = I.down('shoot') || I.down('shootUp'), firePressed = I.pressed('shoot') || I.pressed('shootUp');
+    if (fireDown) this.chargeUp = I.down('shootUp'); // заряженный выстрел летит туда, куда его копили
+    const up = (I.down('up') || I.down('shootUp') || (!fireDown && this.charge > 0 && this.chargeUp)) && !this.crouching ? -Math.PI / 4 : 0;
     this.aimUp = up !== 0;
     if (game.eyeMode > 0) {
-      if (I.down('shoot') && this.shotCd <= 0) {
+      if (fireDown && this.shotCd <= 0) {
         for (const a of [-0.16, 0, 0.16]) game.spawn(new G.EyeShot(ex, ey, this.facing, { beam: true, angle: a + up, dmg: 2 }));
         this.shotCd = 7; this.shootAnim = 8;
         G.Audio.play('shoot');
       }
       return;
     }
-    if (I.pressed('shoot') && this.shotCd <= 0 && this.stun <= 0) {
+    if (firePressed && this.shotCd <= 0 && this.stun <= 0) {
       const live = game.entities.filter((e) => e instanceof G.EyeShot && !e.charged).length;
       if (live < 3 + st.shot * 2) {
         if (st.shot >= 3) for (const a of [-0.14, 0, 0.14]) game.spawn(new G.EyeShot(ex, ey, this.facing, { angle: a + up }));
@@ -479,7 +470,7 @@ G.Player = class Player extends G.Entity {
       }
     }
     if (!this.has('charge')) { this.charge = 0; return; }
-    if (I.down('shoot') && this.stun <= 0) {
+    if (fireDown && this.stun <= 0) {
       this.charge++;
       const m = this.chargeMax(game);
       if (this.charge === 14) G.Audio.play('charge');

@@ -1179,7 +1179,7 @@ G.LEVELS = [
     signs: ['C — бросить копьё, Z — прыжок', 'Копьё в стену — и на него можно встать!', 'Кирпичи ломаются копьём и головой', 'Впереди опасность...'],
   },
   {
-    id: 2, hints: ['[X] выстрел третьим глазом   [↑]+[X] вверх'], title: 'КАНАЛИЗАЦИЯ', theme: 'sewer', music: 'sewer', boss: 'croc', unlock: 'djump',
+    id: 2, hints: ['[X] выстрел третьим глазом   [A] выстрел вверх'], title: 'КАНАЛИЗАЦИЯ', theme: 'sewer', music: 'sewer', boss: 'croc', unlock: 'djump',
     chunks: ['sew_start', 'sew_sludge', 'sew_pipes', 'sew_rest', 'sew_geyser', 'sew_lift', 'sew_shaft', 'sew_drop', 'sew_pipes', 'sew_pre', 'arena_sewer'],
     signs: ['X — выстрел третьим глазом', 'Что-то большое плещется в жиже...'],
   },
