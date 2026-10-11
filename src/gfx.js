@@ -78,41 +78,42 @@ G.Gfx = (() => {
     ctx.globalAlpha = pa;
   };
 
-  // --- Текст: пиксельный шрифт, пороговая отрисовка (никаких полутонов) ---
-  X.font = '"Press Start 2P", monospace';
+  // --- Текст: собственный битовый шрифт (src/font.js), одинаково чёткий везде ---
   const textCache = new Map();
-  const tcv = document.createElement('canvas');
-  const tctx = tcv.getContext('2d', { willReadFrequently: true });
-  function glyphs(str, color, size) {
-    const key = size + '|' + color + '|' + str;
+  const glyphOf = (c) => G.FONT[c] || G.FONT[c.toUpperCase()] || G.FONT['?'];
+  function measure(str) {
+    let w = 0;
+    for (const c of str) w += glyphOf(c).w + 1;
+    return Math.max(0, w - 1);
+  }
+  function glyphs(str, color) {
+    const key = color + '|' + str;
     let img = textCache.get(key);
     if (img) return img;
-    tctx.font = `${size}px ${X.font}`;
-    const w = Math.max(1, Math.ceil(tctx.measureText(str).width) + 2), h = size + 4;
-    tcv.width = w; tcv.height = h;
-    tctx.font = `${size}px ${X.font}`;
-    tctx.textBaseline = 'top';
-    tctx.fillStyle = '#fff';
-    tctx.fillText(str, 1, 1);
-    const data = tctx.getImageData(0, 0, w, h);
-    const [r, g, b] = G.hexToRgb(color);
-    for (let i = 0; i < data.data.length; i += 4) {
-      const on = data.data[i + 3] > 110;
-      data.data[i] = r; data.data[i + 1] = g; data.data[i + 2] = b; data.data[i + 3] = on ? 255 : 0;
-    }
+    const w = measure(str) + 2, h = 12;
     img = document.createElement('canvas');
-    img.width = w; img.height = h;
-    img.getContext('2d').putImageData(data, 0, 0);
-    if (textCache.size > 600) textCache.clear();
+    img.width = Math.max(1, w); img.height = h;
+    const c = img.getContext('2d');
+    c.fillStyle = color;
+    let x = 1;
+    for (const ch of str) {
+      const gl = glyphOf(ch);
+      for (let r = 0; r < gl.rows.length; r++) {
+        const row = gl.rows[r];
+        for (let i = 0; i < row.length; i++) if (row[i] === '#') c.fillRect(x + i, 1 + gl.top + r, 1, 1);
+      }
+      x += gl.w + 1;
+    }
+    if (textCache.size > 800) textCache.clear();
     textCache.set(key, img);
     return img;
   }
-  X.textWidth = (str, size = 8) => glyphs(str, '#ffffff', size).width - 2;
+  X.textWidth = (str) => measure(String(str));
   // opts: color, align ('left'|'center'|'right'), shadow (цвет или false), outline (цвет), scale (1|2), alpha
   X.text = (str, x, y, o = {}) => {
     str = String(str);
-    const size = 8, sc = o.scale || 1;
-    const img = glyphs(str, o.color || '#ffffff', size);
+    const sc = o.scale || 1;
+    const img = glyphs(str, o.color || '#ffffff');
     const w = (img.width - 2) * sc;
     let dx = Math.round(o.align === 'center' ? x - w / 2 : o.align === 'right' ? x - w : x) - sc;
     const dy = Math.round(y) - sc;
@@ -120,11 +121,11 @@ G.Gfx = (() => {
     if (o.alpha !== undefined) ctx.globalAlpha = pa * o.alpha;
     const dw = img.width * sc, dh = img.height * sc;
     if (o.outline) {
-      const ol = glyphs(str, o.outline, size);
+      const ol = glyphs(str, o.outline);
       for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) ctx.drawImage(ol, dx + ox * sc, dy + oy * sc, dw, dh);
     }
     if (o.shadow !== false) {
-      const sh = glyphs(str, o.shadow || '#120a1c', size);
+      const sh = glyphs(str, o.shadow || '#120a1c');
       ctx.drawImage(sh, dx + sc, dy + sc, dw, dh);
     }
     ctx.drawImage(img, dx, dy, dw, dh);

@@ -400,6 +400,10 @@ G.UI = (() => {
       const n = [...Array(8).keys()].filter((k) => (game.levelGlyphs || 0) & (1 << k)).length;
       T(`Секретные медальоны: ${n} / ${game.level.glyphCount}`, W / 2, 116, { align: 'center', color: n === game.level.glyphCount ? '#9affc8' : '#c0b0e0' });
     }
+    if (t > 80 && game.level && game.level.secrets.length) {
+      const n = game.levelSecrets || 0, m = game.level.secrets.length;
+      T(`Тайники: ${n} / ${m}`, W / 2, 128, { align: 'center', color: n === m ? '#9affc8' : '#c0b0e0' });
+    }
     if (t > 50) T(`Всего монет: ${game.coins}`, W / 2, 104, { align: 'center', color: '#ffd060' });
     if (t > 90 && game.frame % 40 < 28) T(game.levelIdx >= G.LEVELS.length - 1 ? 'Z — дальше' : 'Z — в лавку мастера', W / 2, 190, { align: 'center', color: '#9affc8' });
   }

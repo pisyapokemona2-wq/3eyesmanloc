@@ -13,7 +13,7 @@ G.Tiles = (() => {
     return !!s;
   }
   function groundPart(L, tx, ty, h) {
-    const open = (x, y) => { const t = L.get(x, y); return !isGround(t) && t !== TT.LIQUID; };
+    const open = (x, y) => { const t = L.get(x, y); return !isGround(t) && t !== TT.LIQUID && !L.covered(x, y); };
     const u = open(tx, ty - 1), d = open(tx, ty + 1), l = open(tx - 1, ty), r = open(tx + 1, ty);
     if (u) return l && r ? 'topLR' : l ? 'topL' : r ? 'topR' : h < 0.5 ? 'top0' : 'top1';
     if (d) return l && r ? 'bottomLR' : l ? 'bottomL' : r ? 'bottomR' : 'bottom';
@@ -127,6 +127,30 @@ G.Tiles = (() => {
     c.fillStyle = 'rgba(255,240,200,0.35)';
     c.fillRect(x + 9, y + 1, 1, 2); c.fillRect(x + 7, y + 9, 1, 2);
   }
+
+  // Ложные стены поверх всего: выглядят как земля, становятся полупрозрачными, когда найдены
+  S.drawSecrets = (c, L, camX, camY, frame) => {
+    if (!L.secrets.length) return;
+    const th = L.theme;
+    const tx0 = Math.max(0, Math.floor(camX / 16)), tx1 = Math.min(L.w - 1, Math.floor((camX + G.W) / 16));
+    const ty0 = Math.max(0, Math.floor(camY / 16)), ty1 = Math.min(L.h - 1, Math.floor((camY + G.H) / 16));
+    const pa = c.globalAlpha;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      if (!L.covered(tx, ty)) continue;
+      const rv = L.secretReveal(tx, ty);
+      if (rv >= 1) continue;
+      const x = tx * 16, y = ty * 16, h = G.hash2(tx, ty);
+      c.globalAlpha = pa * (1 - rv);
+      blit(c, part(th, groundPart(L, tx, ty, h)), x, y);
+      // редкий блик — подсказка внимательному игроку
+      const g = (frame + Math.floor(h * 400)) % 300;
+      if (!rv && g < 14) {
+        c.fillStyle = 'rgba(255,250,220,0.6)';
+        for (let q = 0; q < 3; q++) { const px = g + 1 - q, py = 14 - g + q; if (px >= 0 && px < 16 && py >= 0 && py < 16) c.fillRect(x + px, y + py, 1, 1); }
+      }
+    }
+    c.globalAlpha = pa;
+  };
 
   S.drawProps = (c, L, camX) => {
     for (const p of L.props) {

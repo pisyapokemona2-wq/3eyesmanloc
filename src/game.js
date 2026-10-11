@@ -57,6 +57,7 @@ G.Game = class Game {
     G.UI.toast(null);
     for (const a of this.abilitiesFor(i)) this.abil.add(a);
     if (!keepCheckpoint) { this.checkpoint = null; this.levelCoins = 0; this.levelGlyphs = 0; }
+    this.levelSecrets = 0;
     const L = this.level;
     this.arena = null;
     if (L.arena) {
@@ -119,6 +120,13 @@ G.Game = class Game {
     G.Particles.fx('fx_ring', x, y);
     const n = [...Array(8).keys()].filter((k) => this.levelGlyphs & (1 << k)).length;
     G.UI.toast(`СЕКРЕТНЫЙ МЕДАЛЬОН ${n}/${this.level.glyphCount}`);
+  }
+  foundSecret(reg) {
+    this.levelSecrets = (this.levelSecrets || 0) + 1;
+    G.Audio.play('secret');
+    const j = reg.tiles[0], L = this.level;
+    G.Particles.sparks((j % L.w) * 16 + 8, ((j / L.w) | 0) * 16 + 8, 12, '#fff3a0', 2);
+    G.UI.toast(`ТАЙНИК НАЙДЕН! ${this.levelSecrets}/${L.secrets.length}`);
   }
   lifeTaken(s) { return !!(this.takenLives && this.takenLives.has(this.levelIdx + ':' + s.tx + ':' + s.ty)); }
 
@@ -382,6 +390,7 @@ G.Game = class Game {
     for (const e of this.entities) if (e.layer === 1 && e.onScreen(this, 60)) e.draw(c, this);
     this.player.draw(c, this);
     for (const e of this.entities) if (e.layer === 2 && e.onScreen(this, 60)) e.draw(c, this);
+    G.Tiles.drawSecrets(c, L, cx, cy, this.frame);
     G.Particles.draw(c, 1);
     this.renderLighting(cx, cy);
     G.Backgrounds.overlay(c, L.theme, cx, this.time);

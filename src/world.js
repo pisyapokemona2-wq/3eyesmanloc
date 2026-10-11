@@ -41,6 +41,7 @@ G.Level = class Level {
     const W = (this.w = parts.reduce((a, p) => a + p.w, 0));
     this.tiles = new Uint8Array(W * H);
     this.bg = new Uint8Array(W * H);
+    this.cover = new Uint8Array(W * H); // клетки, скрытые ложной стеной
     this.spawns = [];
     this.bonus = new Map();
     this.bump = new Map();
@@ -54,6 +55,7 @@ G.Level = class Level {
     for (const p of parts) {
       const oy = H - p.rows.length;
       if (p.name.startsWith('arena')) this.arena = { x: ox * T_, tx: ox, w: p.w };
+      for (const [cx, cy, cw, chh] of p.rows.covers || []) for (let yy = cy; yy < cy + chh; yy++) for (let xx = cx; xx < cx + cw; xx++) this.cover[(oy + yy) * W + ox + xx] = 1;
       p.rows.forEach((row, ry) => {
         for (let rx = 0; rx < p.w; rx++) {
           const ch = row[rx] || '.';
@@ -67,6 +69,7 @@ G.Level = class Level {
             case 'X': set(TT.HEAVY); break;
             case 'Z': set(TT.CRACKED); break;
             case 'I': set(TT.ICE); break;
+            case 'Q': this.cover[i] = 1; break; // ложная стена — тайник
             case '<': set(TT.CONV_L); break;
             case '>': set(TT.CONV_R); break;
             case 'R': this.spawns.push({ type: 'firebar', x: wx + 8, y: wy + 8 }); break;
@@ -121,8 +124,35 @@ G.Level = class Level {
     }
     for (let i = 0; i < this.bg.length; i++) if (this.bg[i] === 2) this.bg[i] = 1;
     this.glyphCount = this.spawns.filter((s) => s.type === 'glyph').length;
+    this.findSecrets();
     this.decorate();
   }
+
+  // Связные области ложных стен — каждая считается одним тайником
+  findSecrets() {
+    this.secrets = [];
+    this.secretOf = new Map();
+    for (let i = 0; i < this.tiles.length; i++) if (this.cover[i] && SOLID_SET.has(this.tiles[i])) this.cover[i] = 0;
+    for (let i = 0; i < this.tiles.length; i++) {
+      if (!this.cover[i] || this.secretOf.has(i)) continue;
+      const reg = { tiles: [], found: false, reveal: 0 }, st = [i];
+      this.secretOf.set(i, reg);
+      while (st.length) {
+        const j = st.pop(), x = j % this.w, y = (j / this.w) | 0;
+        reg.tiles.push(j);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy, k = ny * this.w + nx;
+          if (nx < 0 || ny < 0 || nx >= this.w || ny >= this.h || this.secretOf.has(k) || !this.cover[k]) continue;
+          this.secretOf.set(k, reg);
+          st.push(k);
+        }
+      }
+      this.secrets.push(reg);
+    }
+    for (let i = 0; i < this.cover.length; i++) if (this.cover[i]) this.bg[i] = 1; // внутри тайника — задняя стена
+  }
+  covered(tx, ty) { return tx >= 0 && tx < this.w && ty >= 0 && ty < this.h && this.cover[ty * this.w + tx] === 1; }
+  secretReveal(tx, ty) { const r = this.secretOf.get(ty * this.w + tx); return r ? r.reveal : 0; }
 
   // Случайные пропсы на поверхностях (детерминированно)
   decorate() {
@@ -205,6 +235,16 @@ G.Level = class Level {
   }
 
   update(game) {
+    const p = game.player;
+    for (const reg of this.secrets) {
+      if (reg.found) { reg.reveal = Math.min(1, reg.reveal + 0.04); continue; }
+      if (!p) continue;
+      const x0 = Math.floor(p.x / T_), x1 = Math.floor((p.x + p.w - 0.01) / T_);
+      const y0 = Math.floor(p.y / T_), y1 = Math.floor((p.y + p.h - 0.01) / T_);
+      let hit = false;
+      for (let ty = y0; ty <= y1 && !hit; ty++) for (let tx = x0; tx <= x1; tx++) if (this.secretOf.get(ty * this.w + tx) === reg) { hit = true; break; }
+      if (hit) { reg.found = true; game.foundSecret(reg); }
+    }
     for (const [i, v] of this.bump) { if (v <= 1) this.bump.delete(i); else this.bump.set(i, v - 1); }
     for (const [i, c] of this.crumble) {
       c.t++;

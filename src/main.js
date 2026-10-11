@@ -25,9 +25,7 @@
     requestAnimationFrame(loop);
   };
 
-  // Ждём пиксельный шрифт (если сеть недоступна — через секунду стартуем с запасным)
-  const fontReady = document.fonts && document.fonts.load ? document.fonts.load('10px "Press Start 2P"', 'АБВ') : Promise.resolve();
-  Promise.race([fontReady, new Promise((r) => setTimeout(r, 1200))]).then(start, start);
+  start();
 
   // Клик/тап тоже запускает звук
   const unlock = () => { G.Audio.init(); };
