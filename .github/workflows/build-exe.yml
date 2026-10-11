@@ -19,5 +19,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cd dist && zip -q -9 ThirdEye.zip ThirdEye.exe && cd ..
           gh release delete game --yes --cleanup-tag || true
-          gh release create game dist/ThirdEye.exe --target "$GITHUB_SHA" --title "Третий Глаз — последняя сборка" --notes "Скачайте ThirdEye.exe и запустите. Нужен Windows 10/11."
+          gh release create game dist/ThirdEye.exe dist/ThirdEye.zip --target "$GITHUB_SHA" --title "Третий Глаз — последняя сборка" --notes "Скачайте ThirdEye.exe (или ThirdEye.zip, если браузер блокирует exe) и запустите. Нужен Windows 10/11."
