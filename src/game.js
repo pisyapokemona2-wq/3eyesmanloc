@@ -78,6 +78,8 @@ G.Game = class Game {
         case 'vplat': e = new G.MovingPlatform(s.x, s.y, true); break;
         case 'fan': e = new G.Fan(s.x, s.y, L); break;
         case 'sign': e = new G.Sign(s.x, s.y, s.text); break;
+        case 'hint': e = new G.HintZone(s.x, s.y, s.text); break;
+        case 'target': e = new G.SpearTarget(s.x, s.y); break;
         case 'torch': e = new G.Torch(s.x, s.y); break;
         case 'prop': break;
         default: if (s.enemy) e = G.makeEnemy(s, L);
@@ -187,7 +189,7 @@ G.Game = class Game {
       case 'intro': G.Audio.stopMusic(); break;
       case 'play': G.Audio.music(this.bossStarted ? 'boss' : G.LEVELS[this.levelIdx].music); break;
       case 'gameover': G.Audio.stopMusic(); break;
-      case 'clear': G.Audio.stopMusic(); G.Audio.play('checkpoint'); break;
+      case 'clear': G.Audio.stopMusic(); G.Audio.play('clear'); break;
       case 'shop': G.Audio.music('shop'); break;
       case 'ending': G.Audio.music('ending'); break;
     }
@@ -236,6 +238,7 @@ G.Game = class Game {
     for (let i = this.timers.length - 1; i >= 0; i--) if (--this.timers[i].t <= 0) { const f = this.timers[i].fn; this.timers.splice(i, 1); f(); }
     if (this.eyeMode > 0 && --this.eyeMode === 0) G.Audio.play('recall');
 
+    this.hint = null;
     for (const e of this.entities) if (e instanceof G.MovingPlatform) e.update(this);
     if (this.wind && this.player.alive) G.Physics.moveX(this.player, L, this.wind * (this.player.onGround ? 0.6 : 1));
     this.player.update(this);
@@ -269,8 +272,33 @@ G.Game = class Game {
         G.Save.store();
       });
     }
+    this.stuckCheck();
     this.updateCamera();
     if (this.shakeT > 0) this.shakeT--; else this.shakeAmt = 0;
+  }
+
+  // Если герой долго не может продвинуться — подсказываем, что делать
+  stuckCheck() {
+    const p = this.player, L = this.level;
+    if (!p.alive || this.bossStarted) { this.stuckT = 0; return; }
+    if (p.x > (this.bestX || 0) + 24 || this.stuckX === undefined) { this.bestX = Math.max(this.bestX || 0, p.x); this.stuckX = p.x; this.stuckT = 0; }
+    if (Math.abs(p.x - this.stuckX) > 80) { this.stuckX = p.x; this.stuckT = 0; }
+    this.stuckT = (this.stuckT || 0) + 1;
+    if (this.stuckT < 360 || this.hint) return;
+    // что впереди: высокая стена или пропасть?
+    const dir = p.facing, fx = dir > 0 ? p.x + p.w + 8 : p.x - 8;
+    let wall = 0;
+    const ty0 = Math.floor((p.bottom - 1) / 16);
+    for (let k = 0; k < 10; k++) { if (L.isSolid(Math.floor(fx / 16), ty0 - k)) wall++; else break; }
+    let pit = true;
+    for (let k = 0; k < 6; k++) if (L.isSolid(Math.floor((fx + dir * 16) / 16), ty0 + 1 + k)) { pit = false; break; }
+    const has = (a) => this.abil.has(a);
+    if (wall >= 5 && has('wall')) this.hint = 'Высокая стена: прыгай [Z] от стены к стене';
+    else if (wall >= 5 && has('djump') && wall <= 8) this.hint = 'Двойной прыжок: [Z], в воздухе ещё раз [Z]';
+    else if (wall >= 5) this.hint = '[C] — брось копьё в стену, запрыгни на него [Z]';
+    else if (pit && has('dash')) this.hint = 'Пропасть: прыжок [Z], затем рывок [SHIFT]';
+    else if (pit && has('djump')) this.hint = 'Пропасть: разбегись, [Z] и ещё раз [Z] в воздухе';
+    else if (pit) this.hint = 'Разбегись и прыгай [Z] — держи дольше, чтобы прыгнуть дальше';
   }
 
   updateCamera() {

@@ -310,3 +310,36 @@ G.Warning = class Warning extends G.Entity {
     c.fillRect(Math.round(this.x), Math.round(this.y), Math.round(this.w), Math.round(this.h));
   }
 };
+
+// Зона подсказки: пока герой в ней — внизу экрана крупная плашка с клавишами
+G.HintZone = class HintZone extends G.Entity {
+  constructor(x, y, text) { super(x - 40, y - 400, 230, 420); this.text = text; this.layer = 0; this.done = false; }
+  update(game) {
+    const p = game.player;
+    if (!this.done && p && p.alive && p.cx > this.x && p.cx < this.x + this.w) game.hint = this.text;
+  }
+  onScreen() { return false; }
+};
+// Мишень на стене: «брось копьё сюда»
+G.SpearTarget = class SpearTarget extends G.Entity {
+  constructor(x, y) { super(x - 6, y - 6, 12, 12); this.layer = 2; this.hidden = false; }
+  update(game) {
+    this.t++;
+    const sp = game.player && game.player.spear;
+    if (sp && sp.state === 'stuck' && Math.abs(sp.cy - this.cy) < 24 && Math.abs((sp.dir > 0 ? sp.x + sp.w : sp.x) - this.cx) < 16) this.hidden = true;
+  }
+  draw(c) {
+    if (this.hidden) return;
+    const k = Math.floor(this.t / 8) % 2, x = Math.round(this.cx), y = Math.round(this.cy);
+    G.Gfx.glow(x, y, 12, '#ffe060', 0.5);
+    c.fillStyle = k ? '#ffe060' : '#ff9a30';
+    // кольцо-мишень 9×9
+    c.fillRect(x - 2, y - 5, 5, 1); c.fillRect(x - 2, y + 4, 5, 1); c.fillRect(x - 5, y - 2, 1, 5); c.fillRect(x + 4, y - 2, 1, 5);
+    c.fillRect(x - 4, y - 4, 2, 1); c.fillRect(x + 3, y - 4, 2, 1); c.fillRect(x - 4, y + 3, 2, 1); c.fillRect(x + 3, y + 3, 2, 1);
+    c.fillRect(x - 4, y - 3, 1, 1); c.fillRect(x + 4, y - 3, 1, 1); c.fillRect(x - 4, y + 3, 1, 1); c.fillRect(x + 4, y + 3, 1, 1);
+    c.fillRect(x, y, 1, 1);
+    // стрелка слева «бросай сюда»
+    const ax = x - 14 - (this.t % 30 < 15 ? 0 : 2);
+    c.fillRect(ax, y, 6, 1); c.fillRect(ax + 4, y - 2, 1, 5); c.fillRect(ax + 5, y - 1, 1, 3);
+  }
+};

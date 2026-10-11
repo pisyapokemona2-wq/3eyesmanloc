@@ -240,6 +240,7 @@ G.UI = (() => {
       X.rect(x, y, Math.round(w * (b.hp / b.maxHp) * intro), 1, '#ff9a8a');
       X.rect(x + w / 2, y, 1, 4, '#ffffff');
     }
+    if (game.hint && game.state === 'play') drawHint(game.hint, game);
     if (banner) {
       const t = banner.t;
       if (t > 10 && t < 150) {
@@ -249,6 +250,27 @@ G.UI = (() => {
         T('ОПАСНОСТЬ!', W / 2 - off, 108, { align: 'center', color: '#ffd86a' });
         T(banner.name, W / 2 + off, 120, { align: 'center', scale: 2, color: '#ffffff', outline: '#3a0010' });
       }
+    }
+  }
+
+  // Плашка подсказки: текст, где [X] — клавиши в «колпачках»
+  function drawHint(text, game) {
+    const parts = text.split(/(\[[^\]]+\])/).filter(Boolean);
+    let w = 0;
+    for (const p of parts) w += p[0] === '[' ? X.textWidth(p.slice(1, -1)) + 8 : X.textWidth(p);
+    const bw = w + 24, bx = Math.round(W / 2 - bw / 2), by = H - 44;
+    X.frame(bx, by, bw, 24);
+    let x = bx + 12;
+    for (const p of parts) {
+      if (p[0] === '[') {
+        const k = p.slice(1, -1), kw = X.textWidth(k) + 6;
+        const up = Math.floor(game.frame / 20) % 2;
+        X.rect(x - 1, by + 6 + up, kw + 2, 12, '#120a1c');
+        X.rect(x, by + 6 + up, kw, 10, '#f0e8d8');
+        X.rect(x, by + 15 + up, kw, 1, '#a89880');
+        X.text(k, x + 3, by + 8 + up, { color: '#2a1838', shadow: false });
+        x += kw + 2;
+      } else { X.text(p, x, by + 8, { color: '#fff3c8' }); x += X.textWidth(p); }
     }
   }
 

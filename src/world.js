@@ -49,7 +49,7 @@ G.Level = class Level {
     this.props = [];
     this.start = { x: 32, y: (H - 3) * T_ };
     this.arena = null;
-    let ox = 0, sign = 0;
+    let ox = 0, sign = 0, hint = 0;
     for (const p of parts) {
       const oy = H - p.rows.length;
       if (p.name.startsWith('arena')) this.arena = { x: ox * T_, tx: ox, w: p.w };
@@ -78,6 +78,8 @@ G.Level = class Level {
             case 'P': this.start = { x: wx + 8, y: wy + T_ }; break;
             case '@': if (this.arena) this.arena.trigger = wx; break;
             case 'T': this.spawns.push({ type: 'sign', x: wx + 8, y: wy + T_, text: (def.signs || [])[sign++] || '' }); break;
+            case '%': this.spawns.push({ type: 'hint', x: wx + 8, y: wy + T_, text: (def.hints || [])[hint++] || '' }); break;
+            case ';': this.spawns.push({ type: 'target', x: wx + T_, y: wy + 8 }); break;
             case 'i': this.spawns.push({ type: 'torch', x: wx + 8, y: wy + T_ }); this.lights.push({ x: wx + 8, y: wy + 2, r: 60 }); break;
             case 'D': this.spawns.push({ type: 'prop', x: wx + 8, y: wy + T_ }); break;
             case 'H': this.spawns.push({ type: 'heart', x: wx + 8, y: wy + T_ }); break;
