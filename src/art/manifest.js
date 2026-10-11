@@ -14,4 +14,5 @@ window.ART_FILES = [
   'tiles_volcano.js',
   'tiles_sky.js',
   'tiles_temple.js',
+  'hazards.js',
 ];

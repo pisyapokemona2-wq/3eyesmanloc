@@ -1,0 +1,9 @@
+{
+  "name": "third-eye",
+  "productName": "Третий Глаз",
+  "version": "2.0.0",
+  "description": "Пиксельный ремейк 3 Eyes Boy",
+  "main": "desktop/main.js",
+  "author": "Third Eye team",
+  "license": "MIT"
+}
