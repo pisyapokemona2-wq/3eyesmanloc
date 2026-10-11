@@ -16,6 +16,9 @@ rm(path.join(STAGE, 'www')); rm(path.join(STAGE, 'dist'));
 fs.mkdirSync(path.join(STAGE, 'www', 'desktop'), { recursive: true });
 for (const f of ['index.html', 'src', 'assets']) copy(path.join(ROOT, f), path.join(STAGE, 'www', f));
 for (const f of ['neu-boot.js', 'icon.png']) copy(path.join(ROOT, 'desktop', f), path.join(STAGE, 'www', 'desktop', f));
+// номер сборки (дата и время по Москве) — виден на титульном экране
+const stamp = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
+fs.appendFileSync(path.join(STAGE, 'www', 'src', 'core.js'), `\nG.BUILD = '${stamp}';\n`);
 fs.writeFileSync(path.join(STAGE, 'neutralino.config.json'), JSON.stringify({
   applicationId: 'thirdeye.game', version: '2.0.0', defaultMode: 'window',
   documentRoot: '/www/', url: '/', enableServer: true, enableNativeAPI: true,

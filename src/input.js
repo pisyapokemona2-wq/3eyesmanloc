@@ -29,6 +29,15 @@ G.Input = (() => {
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    // F1 — бессмертие, F2 — воскрешение (режимы для тестов)
+    if (e.code === 'F1' || e.code === 'F2') {
+      e.preventDefault();
+      const d = G.Save.data, k = e.code === 'F1' ? 'god' : 'revive';
+      d[k] = !d[k]; G.Save.store();
+      G.UI.toast((k === 'god' ? 'БЕССМЕРТИЕ ' : 'ВОСКРЕШЕНИЕ ') + (d[k] ? 'ВКЛЮЧЕНО' : 'ВЫКЛЮЧЕНО'));
+      G.Audio.play('select');
+      return;
+    }
     held.add(e.code);
     latched.add(e.code);
     anyKeyLatch = true;

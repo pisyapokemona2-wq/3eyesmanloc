@@ -179,6 +179,7 @@ G.Player = class Player extends G.Entity {
 
   hurt(dmg, game, fromX) {
     if (!this.alive || this.invuln > 0 || this.dashT > 0 || game.eyeMode > 0 || game.state !== 'play') return false;
+    if (G.Save.data.god) { this.invuln = 30; G.Particles.fx('fx_ring', this.cx, this.cy); return false; } // бессмертие (тест)
     if (game.stats.shield > 0) {
       game.stats.shield--;
       this.invuln = 80;
@@ -204,6 +205,12 @@ G.Player = class Player extends G.Entity {
 
   die(game, pit = false) {
     if (!this.alive) return;
+    if (G.Save.data.god) {
+      // бессмертие: из пропасти — обратно на последнее твёрдое место
+      if (pit) { this.x = this.safeX ?? this.x; this.y = this.safeY ?? 0; this.vx = this.vy = 0; this.invuln = 60; G.Audio.play('teleport'); }
+      if (this.hp <= 0) this.hp = 1;
+      return;
+    }
     this.alive = false;
     this.hp = 0;
     this.deathT = 0;
@@ -404,6 +411,7 @@ G.Player = class Player extends G.Entity {
     }
 
     this.checkHazards(game);
+    if (this.onGround && L.isSolid(Math.floor(this.cx / 16), Math.floor((this.bottom + 1) / 16)) && L.get(Math.floor(this.cx / 16), Math.floor((this.bottom + 1) / 16)) !== G.T.CRUMBLE) { this.safeX = this.x; this.safeY = this.y; }
     if (this.y > L.h * 16 + 24) { this.die(game, true); return; }
 
     if (!locked) {
