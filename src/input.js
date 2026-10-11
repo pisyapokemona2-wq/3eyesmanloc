@@ -29,12 +29,12 @@ G.Input = (() => {
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
-    // F1 — бессмертие, F2 — воскрешение (режимы для тестов)
+    // F1 — бессмертие (бесконечные жизни, с флажка), F2 — неуязвимость (урон не проходит)
     if (e.code === 'F1' || e.code === 'F2') {
       e.preventDefault();
-      const d = G.Save.data, k = e.code === 'F1' ? 'god' : 'revive';
+      const d = G.Save.data, k = e.code === 'F1' ? 'revive' : 'god';
       d[k] = !d[k]; G.Save.store();
-      G.UI.toast((k === 'god' ? 'БЕССМЕРТИЕ ' : 'ВОСКРЕШЕНИЕ ') + (d[k] ? 'ВКЛЮЧЕНО' : 'ВЫКЛЮЧЕНО'));
+      G.UI.toast((k === 'revive' ? 'БЕССМЕРТИЕ ' : 'НЕУЯЗВИМОСТЬ ') + (d[k] ? 'ВКЛЮЧЕНО' : 'ВЫКЛЮЧЕНО'));
       G.Audio.play('select');
       return;
     }

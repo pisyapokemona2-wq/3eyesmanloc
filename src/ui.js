@@ -50,8 +50,8 @@ G.UI = (() => {
     items.push({ id: 'music', label: 'МУЗЫКА  ' + Math.round(s.music * 100) + '%' });
     items.push({ id: 'sfx', label: 'ЗВУКИ   ' + Math.round(s.sfx * 100) + '%' });
     items.push({ id: 'shake', label: 'ТРЯСКА  ' + (s.shake ? 'ВКЛ' : 'ВЫКЛ') });
-    items.push({ id: 'god', label: 'БЕССМЕРТИЕ [F1]  ' + (s.god ? 'ВКЛ' : 'ВЫКЛ') });
-    items.push({ id: 'revive', label: 'ВОСКРЕШЕНИЕ [F2]  ' + (s.revive ? 'ВКЛ' : 'ВЫКЛ') });
+    items.push({ id: 'revive', label: 'БЕССМЕРТИЕ [F1]  ' + (s.revive ? 'ВКЛ' : 'ВЫКЛ') });
+    items.push({ id: 'god', label: 'НЕУЯЗВИМОСТЬ [F2]  ' + (s.god ? 'ВКЛ' : 'ВЫКЛ') });
     items.push({ id: 'upjump', label: 'ПРЫЖОК НА ↑  ' + (s.upJump !== false ? 'ВКЛ' : 'ВЫКЛ') });
     return items;
   }
@@ -106,8 +106,8 @@ G.UI = (() => {
           G.Audio.play('confirm');
           if (i === 0) game.state = 'play';
           else if (i === 1) { game.state = 'play'; game.player.controlLocked = true; game.fadeTo(() => { game.startLevel(game.levelIdx, true); game.setState('intro'); }); }
-          else if (i === 2) { G.Save.data.god = !G.Save.data.god; G.Save.store(); }
-          else if (i === 3) { G.Save.data.revive = !G.Save.data.revive; G.Save.store(); }
+          else if (i === 2) { G.Save.data.revive = !G.Save.data.revive; G.Save.store(); }
+          else if (i === 3) { G.Save.data.god = !G.Save.data.god; G.Save.store(); }
           else game.fadeTo(() => game.setState('title'));
         }
         break;
@@ -292,7 +292,7 @@ G.UI = (() => {
     const p = game.player;
     if (!p) return;
     const c = X.ctx;
-    const modes = [G.Save.data.god && 'БЕССМЕРТИЕ', G.Save.data.revive && 'ВОСКРЕШЕНИЕ'].filter(Boolean);
+    const modes = [G.Save.data.revive && 'БЕССМЕРТИЕ', G.Save.data.god && 'НЕУЯЗВИМОСТЬ'].filter(Boolean);
     if (modes.length) T('ТЕСТ: ' + modes.join(' + '), 6, 258, { color: '#ff9a6a' });
     // сердца
     for (let i = 0; i < game.stats.maxHp; i++) X.spr(i < p.hp ? 'ui_heart' : 'ui_heart_empty', 6 + i * 10, 6);
@@ -370,7 +370,7 @@ G.UI = (() => {
     X.rect(0, 0, W, H, 'rgba(6,2,14,0.6)');
     X.frame(W / 2 - 90, 80, 180, 104);
     T('ПАУЗА', W / 2, 90, { align: 'center', scale: 2, color: '#9affc8' });
-    ['ПРОДОЛЖИТЬ', 'С ФЛАЖКА', 'БЕССМЕРТИЕ: ' + (G.Save.data.god ? 'ВКЛ' : 'ВЫКЛ'), 'ВОСКРЕШЕНИЕ: ' + (G.Save.data.revive ? 'ВКЛ' : 'ВЫКЛ'), 'В МЕНЮ'].forEach((s, i) => {
+    ['ПРОДОЛЖИТЬ', 'С ФЛАЖКА', 'БЕССМЕРТИЕ: ' + (G.Save.data.revive ? 'ВКЛ' : 'ВЫКЛ'), 'НЕУЯЗВИМОСТЬ: ' + (G.Save.data.god ? 'ВКЛ' : 'ВЫКЛ'), 'В МЕНЮ'].forEach((s, i) => {
       const sel = i === game.menu.i;
       T(s, W / 2 - 46, 116 + i * 13, { color: sel ? '#ffe060' : '#d8d0f0' });
       if (sel) cursor(game, W / 2 - 60, 115 + i * 13);
