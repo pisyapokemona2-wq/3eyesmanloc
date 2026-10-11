@@ -3,7 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches: ['**']
-    tags: ['v*']
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,18 +13,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Зависимости сборки
+      - name: Сборка exe
+        run: node tools/build-exe-lite.js
+      - name: Выложить в Releases (ссылка всегда одна и та же)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p .cache && cd .cache
-          echo '{"name":"build-cache","version":"1.0.0","private":true}' > package.json
-          npm i resedit@2.0.3 @electron/asar@3.2.17
-      - name: Сборка
-        run: node tools/build-exe.js && node tools/build-exe-lite.js
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ThirdEye-win64
-          path: dist/ThirdEye-win64/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ThirdEye-lite
-          path: dist/ThirdEye-lite/
+          gh release delete game --yes --cleanup-tag || true
+          gh release create game dist/ThirdEye.exe --target "$GITHUB_SHA" --title "Третий Глаз — последняя сборка" --notes "Скачайте ThirdEye.exe и запустите. Нужен Windows 10/11."
