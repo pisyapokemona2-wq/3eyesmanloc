@@ -24,7 +24,7 @@ G.Game = class Game {
   }
 
   resetRun() {
-    this.stats = { maxHp: 4, shot: 1, charge: 0, spear: 0, shield: 0 };
+    this.stats = { maxHp: 4, shot: 1, charge: 0, spear: 0, shield: 0, magnet: 0, bank: 0, speed: 0, armor: 0, dash: 0, healer: 0 };
     this.lives = 3;
     this.coins = 0;
     this.levelIdx = 0;
@@ -145,7 +145,8 @@ G.Game = class Game {
   spawnAfterimage(p) {
     G.Particles.add({ kind: 'spr', name: p.frameName(), flip: p.facing < 0, x: p.cx, y: p.bottom, life: 12, layer: 0 });
   }
-  addCoins(n, x, y) {
+  addCoins(n, x, y, raw) {
+    if (!raw && this.stats.bank) n = Math.round(n * (1 + 0.2 * this.stats.bank));
     this.coins += n; this.levelCoins += n; this.totalCoins += n;
     if (x !== undefined) G.Particles.text(x, y, '+' + n, '#ffe060');
   }
@@ -173,7 +174,7 @@ G.Game = class Game {
       if (id === 'eye') this.eyeMeter = 100;
     }
   }
-  setCheckpoint(x, y) { this.checkpoint = { x, y }; const p = this.player; if (p.hp < this.stats.maxHp) p.hp++; }
+  setCheckpoint(x, y) { this.checkpoint = { x, y }; const p = this.player; if (p.hp < this.stats.maxHp) p.hp = this.stats.healer ? this.stats.maxHp : p.hp + 1; }
   onEnemyKilled(e) {
     if (this.eyeMode <= 0 && this.abil.has('eye')) this.eyeMeter = Math.min(100, this.eyeMeter + (e.meter || 10));
     if (!e.isBoss && Math.random() < 0.06) this.spawn(new G.Pickup('heart', e.cx, e.cy, -3));
@@ -267,9 +268,10 @@ G.Game = class Game {
     this.resetRun();
     if (idx > 0) {
       // при выборе этапа — компенсация за пропущенные магазины
-      this.coins = 350 * idx;
+      this.coins = 500 * idx;
       this.stats.maxHp += Math.min(3, Math.floor(idx / 2));
       this.stats.shot = Math.min(3, 1 + Math.floor(idx / 3));
+      this.stats.spear = Math.min(2, Math.floor(idx / 3));
     }
     this.startLevel(idx);
     this.beginStage();

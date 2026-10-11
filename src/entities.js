@@ -38,7 +38,7 @@ G.Coin = class Coin extends G.Entity {
     this.t++;
     this.delay--;
     const p = game.player;
-    const magnet = game.eyeMode ? 110 : 34;
+    const magnet = (game.eyeMode ? 110 : 34) + (game.stats.magnet || 0) * 26;
     if (p && p.alive && this.delay <= 0) {
       const d = G.dist(this.cx, this.cy, p.cx, p.cy);
       if (d < magnet) {

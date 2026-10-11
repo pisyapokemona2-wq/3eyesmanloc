@@ -190,7 +190,7 @@ G.Player = class Player extends G.Entity {
     this.vx = dir * 2.2;
     this.vy = -3.6;
     this.stun = 18;
-    this.invuln = 100;
+    this.invuln = 100 + (game.stats.armor || 0) * 30;
     this.charge = 0;
     this.pounding = false;
     G.Audio.play('hurt');
@@ -247,9 +247,9 @@ G.Player = class Player extends G.Entity {
 
     // --- РЫВОК
     if (this.has('dash') && can && I.pressed('dash') && this.canDash && this.dashCd <= 0 && !this.crouching) {
-      this.dashT = 13;
+      this.dashT = 13 + (game.stats.dash || 0) * 3;
       this.canDash = false;
-      this.dashCd = 24;
+      this.dashCd = 24 - (game.stats.dash || 0) * 6;
       this.pounding = false;
       if (left) this.facing = -1; else if (right) this.facing = 1;
       G.Audio.play('dash');
@@ -276,7 +276,7 @@ G.Player = class Player extends G.Entity {
     // горизонталь
     if (this.dashT <= 0) {
       const ice = this.onGround && this.groundTile === G.T.ICE;
-      const maxV = (this.slow ? 1.2 : this.inWater ? 1.5 : 2.1) * (game.eyeMode ? 1.15 : 1);
+      const maxV = (this.slow ? 1.2 : this.inWater ? 1.5 : 2.1) * (game.eyeMode ? 1.15 : 1) * (1 + (game.stats.speed || 0) * 0.06);
       let target = 0;
       if (can && !this.crouching && !this.pounding) {
         if (left && !(this.wallLock > 0 && this.wallKick < 0)) { target = -maxV; this.facing = -1; }

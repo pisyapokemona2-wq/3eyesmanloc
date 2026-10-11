@@ -7,15 +7,34 @@ G.UI = (() => {
   let banner = null;
   U.bossBanner = (name) => { banner = { name, t: 0 }; };
 
+  // Лавка: у улучшений ступени, каждая открывается после определённого этапа (tiers: [этап, цена]).
+  // Всё скупить за игру нельзя — монет хватает примерно на половину.
+  const stat = (k) => (g) => g.stats[k] || 0;
+  const inc = (k) => (g) => { g.stats[k] = (g.stats[k] || 0) + 1; };
   const SHOP = [
-    { id: 'heart', icon: 'ui_shop_heart', name: 'СЕРДЦЕ +1', desc: 'Больше здоровья', max: 4, price: (n) => 300 + n * 150, cur: (g) => g.stats.maxHp - 4, apply: (g) => g.stats.maxHp++ },
-    { id: 'shot', icon: 'ui_shop_shot', name: 'ВЗГЛЯД+', desc: 'Двойной, затем тройной выстрел', max: 2, price: (n) => 450 + n * 300, cur: (g) => g.stats.shot - 1, apply: (g) => g.stats.shot++, need: 'shot' },
-    { id: 'charge', icon: 'ui_shop_potion', name: 'ФОКУС', desc: 'Заряд выстрела быстрее', max: 3, price: (n) => 250 + n * 150, cur: (g) => g.stats.charge, apply: (g) => g.stats.charge++, need: 'charge' },
-    { id: 'spear', icon: 'ui_shop_spear', name: 'КОНДОР+', desc: 'Копьё сильнее и дальше', max: 3, price: (n) => 300 + n * 150, cur: (g) => g.stats.spear, apply: (g) => g.stats.spear++ },
-    { id: 'shield', icon: 'ui_shop_shield', name: 'ОБЕРЕГ', desc: 'Поглощает один удар', max: 3, price: () => 200, cur: (g) => g.stats.shield, apply: (g) => g.stats.shield++ },
-    { id: 'life', icon: 'ui_shop_life', name: 'ЖИЗНЬ', desc: 'Ещё одна попытка', max: 9, price: (n) => 350 + n * 100, cur: (g) => g.bought.life || 0, apply: (g) => { g.lives++; g.bought.life = (g.bought.life || 0) + 1; } },
+    { id: 'heart', icon: 'ui_shop_heart', name: 'СЕРДЦЕ +1', desc: 'Ещё одно сердце здоровья', tiers: [[1, 400], [3, 700], [5, 1000], [7, 1400]], cur: (g) => g.stats.maxHp - 4, apply: (g) => g.stats.maxHp++ },
+    { id: 'spear', icon: 'ui_shop_spear', name: 'КОНДОР+', desc: 'Копьё бьёт сильнее и летит дальше', tiers: [[1, 350], [3, 650], [6, 1000]], cur: stat('spear'), apply: inc('spear') },
+    { id: 'magnet', icon: 'ui_eye', name: 'МАГНИТ', desc: 'Монеты притягиваются издалека', tiers: [[1, 250], [4, 600]], cur: stat('magnet'), apply: inc('magnet') },
+    { id: 'bank', icon: 'ui_coin', name: 'КОПИЛКА', desc: '+20% к каждой подобранной монете', tiers: [[1, 300], [4, 700]], cur: stat('bank'), apply: inc('bank') },
+    { id: 'shot', icon: 'ui_shop_shot', name: 'ВЗГЛЯД+', desc: 'Двойной, затем тройной выстрел', tiers: [[2, 600], [5, 1100]], cur: (g) => g.stats.shot - 1, apply: (g) => g.stats.shot++, need: 'shot' },
+    { id: 'speed', icon: 'ui_ab_djump', name: 'ПРОВОРСТВО', desc: 'Бег быстрее на 6%', tiers: [[2, 500], [6, 900]], cur: stat('speed'), apply: inc('speed') },
+    { id: 'armor', icon: 'ui_shield', name: 'ЖЕЛЕЗНАЯ КОЖА', desc: 'Дольше неуязвим после удара', tiers: [[3, 450], [6, 850]], cur: stat('armor'), apply: inc('armor') },
+    { id: 'dash', icon: 'ui_ab_dash', name: 'РЫВОК+', desc: 'Рывок длиннее и чаще', tiers: [[3, 500], [6, 900]], cur: stat('dash'), apply: inc('dash'), need: 'dash' },
+    { id: 'healer', icon: 'ui_heart', name: 'ЦЕЛИТЕЛЬ', desc: 'Флажок восстанавливает всё здоровье', tiers: [[4, 800]], cur: stat('healer'), apply: inc('healer') },
+    { id: 'charge', icon: 'ui_shop_potion', name: 'ФОКУС', desc: 'Заряд выстрела копится быстрее', tiers: [[4, 400], [5, 700], [6, 1000]], cur: stat('charge'), apply: inc('charge'), need: 'charge' },
+    { id: 'shield', icon: 'ui_shop_shield', name: 'ОБЕРЕГ', desc: 'Поглощает один удар (можно 3)', tiers: [[1, 200], [1, 300], [1, 400]], cur: stat('shield'), apply: inc('shield'), consumable: true },
+    { id: 'life', icon: 'ui_shop_life', name: 'ЖИЗНЬ', desc: 'Ещё одна попытка', tiers: [[1, 500], [2, 700], [4, 900], [6, 1100], [7, 1300]], cur: (g) => g.bought.life || 0, apply: (g) => { g.lives++; g.bought.life = (g.bought.life || 0) + 1; } },
   ];
-  const shopItems = (g) => SHOP.filter((it) => !it.need || g.abil.has(it.need));
+  // done — сколько этапов пройдено (лавка после этапа N)
+  const shopDone = (g) => g.levelIdx + 1;
+  const shopItems = (g) => SHOP.filter((it) => (!it.need || g.abil.has(it.need)) && it.tiers[0][0] <= shopDone(g));
+  const itemState = (it, g) => {
+    const cur = it.cur(g), max = it.tiers.length;
+    if (cur >= max) return { cur, max, maxed: true };
+    const [need, price] = it.tiers[cur];
+    return { cur, max, price, locked: need > shopDone(g), need };
+  };
+  U._shop = SHOP;
 
   function nav(game, n) {
     const I = G.Input;
@@ -127,9 +146,12 @@ G.UI = (() => {
         if (I.pressed('confirm') && game.stateT > 20) {
           if (i === items.length) { G.Audio.play('confirm'); game.fadeTo(() => { game.startLevel(game.levelIdx + 1); game.beginStage(); }); }
           else {
-            const it = items[i], cur = it.cur(game), price = it.price(cur);
-            if (cur >= it.max || game.coins < price) { G.Audio.play('deny'); U.msg = cur >= it.max ? 'Больше не могу дать.' : 'Не хватает монет, юный.'; U.msgT = 90; }
-            else { game.coins -= price; it.apply(game); G.Audio.play('buy'); U.msg = 'Пусть служит тебе!'; U.msgT = 90; }
+            const it = items[i], st = itemState(it, game);
+            if (st.maxed || st.locked || game.coins < st.price) {
+              G.Audio.play('deny');
+              U.msg = st.maxed ? 'Больше не могу дать.' : st.locked ? `Приходи после ${st.need}-го этапа.` : 'Не хватает монет, юный.';
+              U.msgT = 90;
+            } else { game.coins -= st.price; it.apply(game); G.Audio.play('buy'); U.msg = 'Пусть служит тебе!'; U.msgT = 90; }
           }
         }
         if (U.msgT > 0) U.msgT--;
@@ -419,21 +441,37 @@ G.UI = (() => {
     T(U.msgT > 0 ? U.msg : 'Что желаешь, юный?', 400, 115, { align: 'center', color: '#fff3c8', shadow: false });
     T('ЛАВКА МАСТЕРА', 160, 8, { align: 'center', scale: 2, color: '#ffe060', outline: '#2a1000' });
     X.spr('ui_coin', 12, 30); T(String(game.coins), 22, 30, { color: '#ffe060' });
-    const items = shopItems(game);
-    X.frame(8, 42, 312, 22 + (items.length + 1) * 22);
-    items.forEach((it, i) => {
-      const y = 52 + i * 22, sel = game.menu.i === i, cur = it.cur(game), maxed = cur >= it.max, price = it.price(cur);
-      if (sel) X.rect(14, y - 3, 300, 20, 'rgba(255,224,96,0.14)');
-      X.spr(it.icon, 20, y - 1);
-      T(it.name, 42, y, { color: maxed ? '#7a7090' : sel ? '#ffe060' : '#ffffff' });
-      T(it.desc, 42, y + 9, { color: '#a098c0', shadow: false });
-      if (it.max < 9) for (let k = 0; k < it.max; k++) X.rect(224 + k * 6, y + 2, 4, 4, k < cur ? '#9affc8' : '#3a3050');
-      T(maxed ? 'МАКС' : String(price), 308, y, { align: 'right', color: maxed ? '#7a7090' : game.coins >= price ? '#ffe060' : '#ff6a6a' });
-    });
-    const ny = 52 + items.length * 22, sel = game.menu.i === items.length;
-    T('► СЛЕДУЮЩИЙ ЭТАП', 164, ny + 2, { align: 'center', color: sel ? '#9affc8' : '#ffffff' });
-    if (sel) cursor(game, 70, ny + 1);
-    T('↑↓ — выбор   Z — купить', 240, 258, { align: 'center', color: '#a098b8', shadow: false });
+    const items = shopItems(game), ROWS = 9, RH = 17;
+    const selI = game.menu.i, top = G.clamp(selI - 4, 0, Math.max(0, items.length + 1 - ROWS));
+    X.frame(8, 40, 312, 18 + ROWS * RH);
+    for (let r = 0; r < ROWS; r++) {
+      const i = top + r, y = 50 + r * RH;
+      if (i > items.length) break;
+      const sel = selI === i;
+      if (i === items.length) {
+        T('► СЛЕДУЮЩИЙ ЭТАП', 164, y + 3, { align: 'center', color: sel ? '#9affc8' : '#ffffff' });
+        if (sel) cursor(game, 70, y + 2);
+        continue;
+      }
+      const it = items[i], st = itemState(it, game);
+      if (sel) X.rect(14, y - 2, 300, RH - 1, 'rgba(255,224,96,0.14)');
+      X.spr(it.icon, 20, y - 1 + (G.Art.size(it.icon)[1] <= 10 ? 4 : 0));
+      T(it.name, 40, y + 2, { color: st.maxed ? '#7a7090' : st.locked ? '#9088a8' : sel ? '#ffe060' : '#ffffff' });
+      if (!it.consumable && st.max > 1) for (let k = 0; k < st.max; k++) X.rect(184 + k * 6, y + 4, 4, 4, k < st.cur ? '#9affc8' : k < st.cur + 1 && !st.locked && !st.maxed ? '#5a6a50' : '#3a3050');
+      const label = st.maxed ? 'МАКС' : st.locked ? `после ${st.need}` : String(st.price);
+      T(label, 308, y + 2, { align: 'right', color: st.maxed ? '#7a7090' : st.locked ? '#8a80a0' : game.coins >= st.price ? '#ffe060' : '#ff6a6a' });
+    }
+    if (top > 0) T('▲', 160, 42, { align: 'center', color: '#a098c0', shadow: false });
+    if (top + ROWS <= items.length) T('▼', 160, 52 + ROWS * RH, { align: 'center', color: '#a098c0', shadow: false });
+    // описание выбранного
+    const cur = items[selI];
+    X.frame(8, 214, 312, 30);
+    if (cur) {
+      const st = itemState(cur, game);
+      T(cur.desc, 16, 220, { color: '#fff3c8', shadow: false });
+      T(st.maxed ? 'Куплено полностью' : st.locked ? `Следующая ступень — после ${st.need}-го этапа` : cur.consumable ? `У тебя: ${st.cur} из ${st.max}` : `Ступень ${st.cur + 1} из ${st.max}`, 16, 231, { color: '#a098c0', shadow: false });
+    } else T('Отправиться дальше', 16, 225, { color: '#fff3c8', shadow: false });
+    T('↑↓ — выбор   Z — купить', 240, 256, { align: 'center', color: '#a098b8', shadow: false });
   }
 
   function drawEnding(game) {
