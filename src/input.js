@@ -43,6 +43,7 @@ G.Input = (() => {
     for (const p of pads) {
       if (!p) continue;
       for (const a in padMap) for (const b of padMap[a]) if (p.buttons[b] && p.buttons[b].pressed) out[a] = true;
+      if (p.buttons[12] && p.buttons[12].pressed) out.dpadUp = true;
       const ax = p.axes[0] || 0, ay = p.axes[1] || 0;
       if (ax < -0.4) out.left = true;
       if (ax > 0.4) out.right = true;
@@ -61,7 +62,10 @@ G.Input = (() => {
         prev[a] = cur[a];
         let v = !!pad[a] || !!touch[a];
         let l = false;
-        for (const c of map[a]) {
+        // прыжок также на ↑ / W (можно выключить в меню)
+        const codes = a === 'jump' && G.Save.data.upJump !== false ? map.jump.concat(map.up) : map[a];
+        if (a === 'jump' && G.Save.data.upJump !== false && (touch.up || (pad.up && pad.dpadUp))) v = true;
+        for (const c of codes) {
           if (held.has(c)) v = true;
           if (latched.has(c)) l = true;
         }

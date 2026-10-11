@@ -50,6 +50,7 @@ G.UI = (() => {
     items.push({ id: 'music', label: 'МУЗЫКА  ' + Math.round(s.music * 100) + '%' });
     items.push({ id: 'sfx', label: 'ЗВУКИ   ' + Math.round(s.sfx * 100) + '%' });
     items.push({ id: 'shake', label: 'ТРЯСКА  ' + (s.shake ? 'ВКЛ' : 'ВЫКЛ') });
+    items.push({ id: 'upjump', label: 'ПРЫЖОК НА ↑  ' + (s.upJump !== false ? 'ВКЛ' : 'ВЫКЛ') });
     return items;
   }
   function vol(key, dir) {
@@ -81,6 +82,7 @@ G.UI = (() => {
           else if (it.id === 'select') { game.state = 'select'; game.menu = { i: 0 }; }
           else if (it.id === 'controls') game.state = 'controls';
           else if (it.id === 'shake') { G.Save.data.shake = !G.Save.data.shake; G.Save.store(); }
+          else if (it.id === 'upjump') { G.Save.data.upJump = G.Save.data.upJump === false; G.Save.store(); }
         }
         break;
       }
@@ -272,7 +274,7 @@ G.UI = (() => {
     } else {
       X.frame(W / 2 - 170, 96, 340, 150);
       T('УПРАВЛЕНИЕ', W / 2, 104, { align: 'center', color: '#9affc8' });
-      const rows = [['← →', 'ходьба'], ['↓', 'присесть'], ['Z', 'прыжок'], ['C', 'копьё: бросить / вернуть'], ['X', 'выстрел глазом *'], ['↑ + X', 'выстрел вверх *'], ['SHIFT', 'рывок *'], ['↓ + Z', 'удар сверху (в прыжке) *'], ['V', 'пробуждение глаза *'], ['ESC', 'пауза']];
+      const rows = [['← →', 'ходьба'], ['↓', 'присесть'], ['Z или ↑', 'прыжок'], ['C', 'копьё: бросить / вернуть'], ['X', 'выстрел глазом *'], ['↑ + X', 'выстрел вверх *'], ['SHIFT', 'рывок *'], ['↓ + Z', 'удар сверху (в прыжке) *'], ['V', 'пробуждение глаза *'], ['ESC', 'пауза']];
       rows.forEach(([k, v], i) => { T(k, W / 2 - 154, 118 + i * 11, { color: '#ffe060' }); T(v, W / 2 - 80, 118 + i * 11, { color: '#e8e0ff' }); });
       T('* — способности открываются по ходу игры', W / 2, 233, { align: 'center', color: '#ff9a8a', shadow: false });
     }
