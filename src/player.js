@@ -310,7 +310,11 @@ G.Player = class Player extends G.Entity {
       const probe = (dx) => L.solidAt(dx > 0 ? this.x + this.w + 1 : this.x - 1, this.y + 6) && L.solidAt(dx > 0 ? this.x + this.w + 1 : this.x - 1, this.y + this.h - 4);
       if (right && probe(1)) this.wallDir = 1;
       else if (left && probe(-1)) this.wallDir = -1;
-    }
+      // «память» стены: отскок срабатывает ещё 6 кадров после касания, даже если уже жмёшь в другую сторону
+      if (this.wallDir !== 0) { this.lastWall = this.wallDir; this.wallCoyote = 6; }
+      else if (this.wallCoyote > 0 && probe(this.lastWall)) this.wallCoyote--;
+      else this.wallCoyote = 0;
+    } else this.wallCoyote = 0;
 
     // --- ПРЫЖКИ
     if (this.onGround || this.inWater) { this.coyote = 7; this.airJumps = 0; this.canDash = true; }
@@ -352,12 +356,15 @@ G.Player = class Player extends G.Entity {
       this.jumpHeld = true; this.springBoost = false;
       G.Audio.play('jump');
       G.Particles.dust(this.cx, this.bottom, 2);
-    } else if (this.jumpBuf > 0 && this.wallDir !== 0) {
+    } else if (this.jumpBuf > 0 && (this.wallDir !== 0 || this.wallCoyote > 0)) {
       // отскок от стены
-      this.wallKick = -this.wallDir;
-      this.vx = -this.wallDir * 2.6;
+      const wd = this.wallDir || this.lastWall;
+      this.wallDir = wd; this.wallCoyote = 0;
+      this.wallKick = -wd;
+      this.vx = -wd * 2.6;
       this.vy = -6.6;
-      this.facing = -this.wallDir;
+      this.squash(0.8, 1.2);
+      this.facing = -wd;
       this.wallLock = 12;
       this.jumpBuf = 0; this.jumpHeld = true; this.airJumps = 0;
       G.Audio.play('jump');
@@ -511,7 +518,8 @@ G.Player = class Player extends G.Entity {
 
   checkHazards(game) {
     const L = game.level, b = this.hurtbox();
-    const x0 = Math.floor(b.x / 16), x1 = Math.floor((b.x + b.w) / 16);
+    // шипы снисходительны: задевают, только если заступил больше чем на 3 пикселя
+    const x0 = Math.floor((b.x + 3) / 16), x1 = Math.floor((b.x + b.w - 3) / 16);
     const y0 = Math.floor((b.y - 2) / 16), y1 = Math.floor((this.bottom + 1) / 16);
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
       const t = L.get(tx, ty);
