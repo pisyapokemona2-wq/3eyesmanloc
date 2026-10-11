@@ -6,45 +6,67 @@ G.Audio = (() => {
   let ctx = null, master, sfxBus, musicBus, echoIn, noiseBuf, pulses = {};
   const A = {};
 
+  function graph(c) {
+    // мастер: мягкий срез верхов + компрессор
+    master = c.createGain();
+    master.gain.value = 0.8;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 7000; lp.Q.value = 0.5;
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.2;
+    master.connect(lp).connect(comp).connect(c.destination);
+    sfxBus = c.createGain(); sfxBus.connect(master);
+    musicBus = c.createGain(); musicBus.connect(master);
+    // эхо для ведущих партий
+    echoIn = c.createGain();
+    const delay = c.createDelay(1); delay.delayTime.value = 0.28;
+    const fb = c.createGain(); fb.gain.value = 0.28;
+    const dlp = c.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 2400;
+    const wet = c.createGain(); wet.gain.value = 0.26;
+    echoIn.connect(delay); delay.connect(dlp).connect(fb).connect(delay); dlp.connect(wet).connect(musicBus);
+    A.echoDelay = delay;
+    // пульс-волны с ограниченным числом гармоник (мягче «сырых» квадратов)
+    for (const d of [0.125, 0.25, 0.5]) {
+      const NH = 24, re = new Float32Array(NH), im = new Float32Array(NH);
+      for (let n = 1; n < NH; n++) re[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * d) * Math.pow(0.9, n);
+      pulses[d] = c.createPeriodicWave(re, im);
+    }
+    noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate);
+    const nd = noiseBuf.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  }
   A.init = () => {
     if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ctx = new AC();
-    // мастер: мягкий срез верхов + компрессор
-    master = ctx.createGain();
-    master.gain.value = 0.8;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 7500; lp.Q.value = 0.5;
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.2;
-    master.connect(lp).connect(comp).connect(ctx.destination);
-    sfxBus = ctx.createGain(); sfxBus.connect(master);
-    musicBus = ctx.createGain(); musicBus.connect(master);
-    // эхо для ведущих партий
-    echoIn = ctx.createGain();
-    const delay = ctx.createDelay(1); delay.delayTime.value = 0.28;
-    const fb = ctx.createGain(); fb.gain.value = 0.3;
-    const dlp = ctx.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 2600;
-    const wet = ctx.createGain(); wet.gain.value = 0.32;
-    echoIn.connect(delay); delay.connect(dlp).connect(fb).connect(delay); dlp.connect(wet).connect(musicBus);
-    A.echoDelay = delay;
-    // пульс-волны с ограниченным числом гармоник (мягче «сырых» квадратов)
-    for (const d of [0.125, 0.25, 0.5]) {
-      const N = 24, re = new Float32Array(N), im = new Float32Array(N);
-      for (let n = 1; n < N; n++) re[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * d) * Math.pow(0.92, n);
-      pulses[d] = ctx.createPeriodicWave(re, im);
-    }
-    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const nd = noiseBuf.getChannelData(0);
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    graph(ctx);
     A.applyVolumes();
     if (pendingTrack) A.music(pendingTrack, true);
+  };
+  // Отладка: отрисовать песню без звука в буфер (для проверки громкости)
+  A._offline = async (name, secs = 20) => {
+    const saved = { ctx, master, sfxBus, musicBus, echoIn, noiseBuf, pulses };
+    const sr = 22050;
+    ctx = new OfflineAudioContext(1, sr * secs, sr);
+    pulses = {};
+    graph(ctx);
+    sfxBus.gain.value = 0.8 * 0.55; musicBus.gain.value = 0.6 * 0.42;
+    const b = build(SONGS[name]);
+    A.echoDelay.delayTime.value = b.stepDur * 3;
+    const out = ctx.createGain(); out.connect(musicBus);
+    for (let step = 0, time = 0.05; time < secs - 0.5; step++, time += b.stepDur) {
+      const s = step % b.total;
+      for (const e of b.events) if (e.t === s) playEvent(e, time, b.stepDur, out);
+    }
+    const buf = await ctx.startRendering();
+    ({ ctx, master, sfxBus, musicBus, echoIn, noiseBuf, pulses } = saved);
+    return buf.getChannelData(0);
   };
   A.applyVolumes = () => {
     if (!ctx) return;
     sfxBus.gain.value = G.Save.data.sfx * 0.55;
-    musicBus.gain.value = G.Save.data.music * 0.42;
+    musicBus.gain.value = G.Save.data.music * 0.52;
   };
 
   // --- примитивы ---------------------------------------------------------------
@@ -139,10 +161,10 @@ G.Audio = (() => {
 
   // --- Музыка --------------------------------------------------------------------------
   // Аккорды: 'Am', 'F', 'G7', 'Cmaj7', 'Esus4', 'Bdim', с длительностью 'Am:8' (в шестнадцатых)
-  const QUAL = { '': [0, 4, 7], m: [0, 3, 7], 7: [0, 4, 7, 10], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], sus4: [0, 5, 7], dim: [0, 3, 6], aug: [0, 4, 8] };
+  const QUAL = { '': [0, 4, 7], m: [0, 3, 7], 7: [0, 4, 7, 10], maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], sus4: [0, 5, 7], dim: [0, 3, 6], dim7: [0, 3, 6, 9], aug: [0, 4, 8] };
   function parseChord(s) {
     const [name, len] = s.split(':');
-    const m = /^([A-G][#b]?)(maj7|m7|sus4|dim|aug|m|7)?$/.exec(name);
+    const m = /^([A-G][#b]?)(maj7|m7|sus4|dim7|dim|aug|m|7)?$/.exec(name);
     const root = N(m[1] + '3');
     return { root, iv: QUAL[m[2] || ''], len: len ? +len : 16 };
   }
@@ -151,6 +173,7 @@ G.Audio = (() => {
     const ev = [];
     let t = 0;
     for (const tok of s.trim().split(/\s+/)) {
+      if (tok === '|') continue;
       const [n, d] = tok.split('/');
       const len = d ? +d : 2;
       if (n !== 'r') ev.push({ t, len, midi: N(n) });
@@ -165,54 +188,67 @@ G.Audio = (() => {
   };
 
   function build(song) {
-    const chords = song.chords.map(parseChord);
-    const total = chords.reduce((a, c) => a + c.len, 0);
     const events = [];
-    // мелодия (и вторая партия) повторяется до полной длины сетки
-    for (const [key, inst, vol, oct] of [['lead', song.leadInst || 'p25', song.leadVol || 0.15, 0], ['counter', song.counterInst || 'p12', song.counterVol || 0.07, 0]]) {
-      if (!song[key]) continue;
-      const m = parseMelody(song[key]);
-      for (let off = 0; off < total; off += m.len) for (const e of m.ev) if (off + e.t < total) events.push({ t: off + e.t, len: e.len, midi: e.midi + oct, inst, vol, echo: key === 'lead', vib: song.vib !== false });
-    }
-    let t = 0;
-    for (const c of chords) {
-      const tones = c.iv.map((i) => c.root + i);
-      // бас (треугольник)
-      const bv = song.bassVol || 0.34;
-      const B = (st, len, midi) => events.push({ t: t + st, len, midi, inst: 'triangle', vol: bv });
-      const r = c.root - 12 + (song.bassShift || 0);
-      for (let s = 0; s < c.len; ) {
-        switch (song.bass) {
-          case 'pulse8': B(s, 2, s % 4 === 0 ? r : r + 12); s += 2; break;
-          case 'walk': B(s, 4, [r, r + 7, r + 12, r + 7][(s / 4) % 4]); s += 4; break;
-          case 'gallop': B(s, 1, r); B(s + 1, 1, r); B(s + 2, 2, r + 12); s += 4; break;
-          case 'syncop': B(s, 3, r); B(s + 3, 3, r); B(s + 6, 2, r + 7); s += 8; break;
-          case 'whole': B(s, Math.min(8, c.len - s), r); s += 8; break;
-          default: B(s, 4, r); s += 4;
+    let off = 0;
+    for (const pn of song.form) {
+      const P = Object.assign({}, song, song.parts[pn]);
+      const chords = P.chords.map(parseChord);
+      const total = chords.reduce((a, c) => a + c.len, 0);
+      const starts = [];
+      chords.reduce((a, c) => { starts.push(a); return a + c.len; }, 0);
+      const chordAt = (t) => { let k = 0; while (k + 1 < starts.length && starts[k + 1] <= t) k++; return chords[k]; };
+      const lv = P.leadVol || 0.14;
+      // мелодия + (по желанию) вторая партия: ближайший звук аккорда ниже мелодии
+      if (P.lead) {
+        const m = parseMelody(P.lead);
+        for (const e of m.ev) {
+          if (e.t >= total) break;
+          events.push({ t: off + e.t, len: e.len, midi: e.midi, inst: P.leadInst || 'p25', vol: lv, echo: true, vib: true });
+          if (P.harm) {
+            const pcs = chordAt(e.t).iv.map((i) => (chordAt(e.t).root + i) % 12);
+            for (let d = 3; d <= 9; d++) if (pcs.includes((e.midi - d + 120) % 12)) { events.push({ t: off + e.t, len: e.len, midi: e.midi - d, inst: 'p12', vol: lv * 0.45 }); break; }
+          }
         }
       }
-      // арпеджио / аккорды
-      const av = song.arpVol || 0.05, ai = song.arpInst || 'p12', ao = 12 + (song.arpShift || 0);
-      if (song.arp === 'up' || song.arp === 'up8') {
-        const step = song.arp === 'up' ? 1 : 2;
-        const seqn = [...tones, tones[0] + 12, ...tones.slice(1).reverse()];
-        for (let s = 0, k = 0; s < c.len; s += step, k++) events.push({ t: t + s, len: step, midi: seqn[k % seqn.length] + ao, inst: ai, vol: av });
-      } else if (song.arp === 'stab') {
-        for (let s = 2; s < c.len; s += 4) for (const n of tones.slice(0, 3)) events.push({ t: t + s, len: 1, midi: n + ao, inst: ai, vol: av });
-      } else if (song.arp === 'pad') {
-        for (const n of tones.slice(0, 3)) events.push({ t, len: c.len, midi: n + ao, inst: 'pad', vol: av });
+      let t = 0;
+      for (const c of chords) {
+        const tones = c.iv.map((i) => c.root + i);
+        const bv = P.bassVol || 0.32;
+        const B = (st, len, midi) => { if (st < c.len) events.push({ t: off + t + st, len: Math.min(len, c.len - st), midi, inst: 'triangle', vol: bv }); };
+        const r = c.root - 12 + (P.bassShift || 0);
+        for (let s2 = 0; s2 < c.len; ) {
+          switch (P.bass) {
+            case 'pulse8': B(s2, 2, s2 % 4 === 0 ? r : r + 12); s2 += 2; break;
+            case 'walk': B(s2, 4, [r, r + 7, r + 12, r + 7][(s2 / 4) % 4]); s2 += 4; break;
+            case 'gallop': B(s2, 1, r); B(s2 + 1, 1, r); B(s2 + 2, 2, r + 12); s2 += 4; break;
+            case 'syncop': B(s2, 3, r); B(s2 + 3, 3, r); B(s2 + 6, 2, r + 7); s2 += 8; break;
+            case 'whole': B(s2, 8, r); s2 += 8; break;
+            case 'quarter': B(s2, 2, s2 % 8 === 0 ? r : r + 7); s2 += 4; break;
+            default: B(s2, 4, r); s2 += 4;
+          }
+        }
+        const av = P.arpVol || 0.045, ai = P.arpInst || 'p12', ao = 12 + (P.arpShift || 0);
+        if (P.arp === 'up' || P.arp === 'up8') {
+          const step = P.arp === 'up' ? 1 : 2;
+          const seqn = [...tones, tones[0] + 12, ...tones.slice(1).reverse()];
+          for (let s2 = 0, k = 0; s2 < c.len; s2 += step, k++) events.push({ t: off + t + s2, len: step, midi: seqn[k % seqn.length] + ao, inst: ai, vol: av });
+        } else if (P.arp === 'stab') {
+          for (let s2 = 2; s2 < c.len; s2 += 4) for (const n of tones.slice(0, 3)) events.push({ t: off + t + s2, len: 1, midi: n + ao, inst: ai, vol: av });
+        } else if (P.arp === 'pad') {
+          for (const n of tones.slice(0, 3)) events.push({ t: off + t, len: c.len, midi: n + ao, inst: 'pad', vol: av });
+        }
+        t += c.len;
       }
-      t += c.len;
-    }
-    // барабаны
-    const pat = DRUMS[song.drums || 'none'];
-    for (let s = 0; s < total; s++) {
-      let ch = pat[s % 16];
-      if (song.fill && s % (16 * 4) >= 16 * 4 - 4 && ch === '.') ch = 's';
-      if (ch !== '.') events.push({ t: s, drum: ch, vol: song.drumVol || 0.5 });
+      const pat = DRUMS[P.drums || 'none'];
+      for (let s2 = 0; s2 < total; s2++) {
+        let ch = pat[s2 % 16];
+        if (P.drums !== 'none' && P.drums !== 'soft' && s2 >= total - 4 && s2 % 2 === 0) ch = 's'; // сбивка в конце части
+        if (ch !== '.') events.push({ t: off + s2, drum: ch, vol: P.drumVol || 0.45 });
+      }
+      off += total;
     }
     events.sort((a, b) => a.t - b.t);
-    return { events, total, stepDur: 60 / song.bpm / 4 };
+    return { events, total: off, stepDur: 60 / song.bpm / 4 };
   }
 
   function playEvent(e, time, stepDur, out) {
@@ -244,6 +280,26 @@ G.Audio = (() => {
     }
     const f = HZ(e.midi);
     const dur = e.len * stepDur;
+    if (e.inst === 'bell') {
+      // колокольчик: синус + обертон, затухание без сустейна
+      const len = Math.min(1.4, dur * 1.6 + 0.2);
+      for (const [mul, k] of [[1, 1], [2, 0.3], [3, 0.08]]) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(f * mul, time);
+        g.gain.setValueAtTime(0.0001, time);
+        g.gain.exponentialRampToValueAtTime(e.vol * k, time + 0.005);
+        g.gain.exponentialRampToValueAtTime(0.0001, time + len / mul);
+        o.connect(g).connect(out);
+        if (e.echo && mul === 1) g.connect(echoIn);
+        o.start(time); o.stop(time + len + 0.03);
+      }
+      return;
+    }
+    if (e.inst === 'organ') {
+      playEvent(Object.assign({}, e, { inst: 'p50', vol: e.vol * 0.8 }), time, stepDur, out);
+      playEvent(Object.assign({}, e, { inst: 'p25', midi: e.midi - 12, vol: e.vol * 0.55, echo: false, vib: false }), time, stepDur, out);
+      return;
+    }
     const end = time + dur * (e.inst === 'triangle' ? 0.95 : 0.9);
     const isPad = e.inst === 'pad';
     const o = osc(isPad ? 'triangle' : e.inst, f, time);
@@ -265,54 +321,148 @@ G.Audio = (() => {
   }
 
   // ---- Песни -----------------------------------------------------------------------
+  // Каждая песня — набор частей (по 8 тактов) и форма (порядок частей).
+  // В мелодии «|» разделяет такты: каждый такт — ровно 16 шестнадцатых.
+  // Классические темы (Григ, Бах, Чайковский, «Коробейники», Бетховен) — общественное достояние.
   const SONGS = {
     title: {
-      bpm: 120, chords: ['Am', 'F', 'C', 'G', 'Am', 'F', 'G', 'E'], bass: 'walk', arp: 'up', drums: 'march', fill: true,
-      lead: 'E5/4 A5/4 G5/2 E5/2 C5/4  C5/4 F5/4 A5/2 G5/2 F5/4  G4/2 C5/2 E5/4 G5/4 E5/4  D5/8 B4/4 G4/4  E5/4 A5/4 B5/2 C6/2 B5/4  A5/4 F5/4 A5/2 G5/2 F5/4  G5/4 D5/4 B4/4 D5/4  E5/12 r/4',
+      bpm: 132, form: ['I', 'A', 'B', 'A'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        I: { chords: ['F', 'G'], bass: 'pulse8', drums: 'march', arp: 'none',
+          lead: 'r/16 | G4/2 r/2 G4/2 r/2 G4/2 A4/2 B4/2 D5/2' },
+        A: { chords: ['C', 'G', 'Am', 'F', 'C', 'G', 'F:8', 'G:8', 'C'], bass: 'pulse8', arp: 'up8', drums: 'rock',
+          lead: 'G4/2 C5/2 E5/2 G5/6 E5/2 C5/2 | D5/4 B4/2 G4/2 B4/2 D5/2 G5/4 | A5/6 G5/2 E5/4 C5/4 | F5/2 E5/2 D5/2 C5/2 A4/8 | G4/2 C5/2 E5/2 G5/6 C6/2 B5/2 | D6/6 B5/2 G5/4 D5/4 | A5/4 C6/4 B5/4 D6/4 | C6/12 r/4' },
+        B: { chords: ['Am', 'Em', 'F', 'C', 'Dm', 'Am', 'F', 'G7'], bass: 'walk', arp: 'stab', drums: 'rock', harm: true,
+          lead: 'E5/4 A5/4 C6/4 B5/2 A5/2 | G5/6 E5/2 B4/8 | C5/4 F5/4 A5/4 G5/2 F5/2 | E5/8 D5/4 C5/4 | D5/4 F5/4 A5/4 D6/4 | C6/6 B5/2 A5/4 E5/4 | F5/4 A5/4 C6/4 A5/4 | G5/4 B5/4 D6/4 F6/4' },
+      },
+    },
+    story: {
+      bpm: 88, form: ['A', 'A'], leadInst: 'triangle', leadVol: 0.2,
+      parts: {
+        A: { chords: ['C', 'Am', 'F', 'G', 'C', 'Am', 'F', 'G'], bass: 'whole', arp: 'up8', arpInst: 'triangle', arpVol: 0.05, drums: 'none',
+          lead: 'E5/4 G5/4 C6/8 | B5/4 A5/4 E5/8 | F5/4 A5/4 C6/4 A5/4 | G5/12 r/4 | E5/4 G5/4 C6/6 D6/2 | E6/8 C6/4 A5/4 | A5/4 G5/4 F5/4 D5/4 | G5/16' },
+      },
     },
     city: {
-      bpm: 138, chords: ['Em', 'C', 'D', 'Bm', 'Em', 'C', 'D', 'D'], bass: 'pulse8', arp: 'up8', arpVol: 0.04, drums: 'rock', fill: true,
-      lead: 'B4/2 E5/2 G5/2 B5/4 A5/2 G5/2 F#5/2  G5/4 E5/4 C5/2 E5/2 G5/4  F#5/2 A5/2 D6/4 C6/2 A5/2 F#5/4  D5/4 B4/4 F#5/6 r/2  B4/2 E5/2 G5/2 B5/4 D6/2 B5/2 G5/2  C6/4 B5/2 G5/2 E5/4 G5/4  A5/4 F#5/2 D5/2 E5/2 F#5/2 A5/4  D5/10 r/6',
+      bpm: 140, form: ['A', 'A2', 'B', 'A2'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        A: { chords: ['Em', 'C', 'G', 'D', 'Em', 'C', 'D', 'B'], bass: 'pulse8', arp: 'stab', drums: 'rock',
+          lead: 'E5/2 E5/2 r/2 B4/2 E5/2 G5/2 r/2 F#5/2 | E5/4 C5/2 G4/2 C5/2 E5/2 G5/4 | D5/2 D5/2 r/2 B4/2 D5/2 G5/2 r/2 A5/2 | F#5/6 E5/2 D5/4 A4/4 | E5/2 E5/2 r/2 B4/2 E5/2 G5/2 r/2 B5/2 | C6/4 B5/2 G5/2 E5/4 C5/4 | D5/2 F#5/2 A5/2 D6/2 C6/2 A5/2 F#5/2 D5/2 | D#5/4 F#5/4 B5/8' },
+        A2: { chords: ['Em', 'C', 'G', 'D', 'Em', 'C', 'D', 'Em'], bass: 'pulse8', arp: 'stab', drums: 'rock', harm: true,
+          lead: 'E5/2 E5/2 r/2 B4/2 E5/2 G5/2 r/2 F#5/2 | E5/4 C5/2 G4/2 C5/2 E5/2 G5/4 | D5/2 D5/2 r/2 B4/2 D5/2 G5/2 r/2 A5/2 | F#5/6 E5/2 D5/4 A4/4 | E5/2 E5/2 r/2 B4/2 E5/2 G5/2 r/2 B5/2 | C6/4 B5/2 G5/2 E5/4 C5/4 | D5/2 F#5/2 A5/2 D6/2 C6/2 A5/2 F#5/2 D5/2 | E5/12 r/4' },
+        B: { chords: ['C', 'D', 'Bm', 'Em', 'C', 'D', 'Em', 'B'], bass: 'walk', arp: 'up8', drums: 'groove',
+          lead: 'G5/4 E5/2 G5/2 C6/4 G5/4 | F#5/4 D5/2 F#5/2 A5/8 | B5/4 F#5/2 D5/2 B4/4 D5/4 | E5/6 G5/2 B5/8 | C6/4 B5/2 A5/2 G5/4 E5/4 | A5/4 F#5/4 D6/8 | B5/2 A5/2 G5/2 F#5/2 E5/4 G5/4 | F#5/8 D#5/4 B4/4' },
+      },
     },
     sewer: {
-      bpm: 112, chords: ['Dm', 'Bb', 'Gm', 'A', 'Dm', 'Bb', 'Gm', 'A'], bass: 'syncop', arp: 'stab', arpVol: 0.035, drums: 'groove', leadInst: 'p12', leadVol: 0.13,
-      lead: 'D5/2 r/2 F5/2 r/2 A5/4 G5/2 F5/2  D5/4 F5/2 D5/2 Bb4/8  G4/2 Bb4/2 D5/4 Bb4/2 A4/2 G4/4  C#5/4 E5/4 A5/8  A5/4 F5/2 A5/2 D6/4 C6/2 A5/2  Bb5/4 A5/2 F5/2 D5/8  G5/2 F5/2 D5/2 Bb4/2 D5/4 G5/4  E5/2 C#5/2 A4/4 r/8',
+      bpm: 108, form: ['A', 'B', 'A'], leadInst: 'p12', leadVol: 0.13,
+      parts: {
+        A: { chords: ['Dm', 'Dm', 'Bb', 'A', 'Dm', 'Dm', 'Gm', 'A7'], bass: 'syncop', arp: 'none', drums: 'groove',
+          lead: 'D4/2 r/2 F4/2 r/2 A4/2 r/2 G#4/2 A4/2 | D5/2 r/2 C5/2 A4/2 r/4 F4/4 | Bb4/2 r/2 D5/2 r/2 F5/4 E5/2 D5/2 | C#5/4 E5/4 A4/8 | D4/2 r/2 F4/2 r/2 A4/2 r/2 G#4/2 A4/2 | F5/2 r/2 E5/2 D5/2 A4/4 F4/4 | G4/2 Bb4/2 D5/2 G5/2 F5/2 D5/2 Bb4/4 | A4/2 C#5/2 E5/2 A5/2 G5/4 E5/4' },
+        B: { chords: ['Bb', 'C', 'Am', 'Dm', 'Gm', 'C7', 'F', 'A'], bass: 'walk', arp: 'pad', arpVol: 0.045, drums: 'groove', leadInst: 'p25',
+          lead: 'F5/4 D5/4 Bb4/8 | E5/4 G5/4 C5/8 | A4/2 C5/2 E5/4 D5/2 C5/2 A4/4 | F5/12 r/4 | Bb5/4 G5/4 D5/8 | C5/2 E5/2 G5/4 Bb5/4 G5/4 | A5/4 F5/4 C5/4 F5/4 | E5/4 C#5/4 A4/8' },
+      },
     },
     ruins: {
-      bpm: 124, chords: ['G', 'F', 'C', 'G', 'G', 'F', 'C', 'D'], bass: 'pulse8', arp: 'up8', arpVol: 0.04, drums: 'tribal', fill: true,
-      lead: 'D5/2 G5/2 B5/4 A5/2 G5/2 D5/4  C5/2 F5/2 A5/4 G5/2 F5/2 C5/4  E5/4 G5/4 C6/4 B5/2 G5/2  B5/8 A5/4 G5/4  D6/4 B5/2 G5/2 D5/4 G5/4  F5/4 A5/2 C6/2 A5/4 F5/4  G5/4 E5/2 C5/2 E5/2 G5/2 C6/4  A5/4 F#5/4 D5/8',
+      bpm: 120, form: ['A', 'B', 'A'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        A: { chords: ['G', 'F', 'C', 'G', 'G', 'F', 'C', 'D'], bass: 'pulse8', arp: 'up8', arpInst: 'triangle', arpVol: 0.06, drums: 'tribal',
+          lead: 'G4/2 B4/2 D5/4 r/2 D5/2 E5/2 D5/2 | C5/4 A4/2 F4/2 r/4 A4/2 C5/2 | E5/4 G5/4 E5/2 D5/2 C5/4 | D5/12 r/4 | G5/2 G5/2 F5/2 D5/2 B4/4 D5/4 | A5/4 F5/2 C5/2 A4/4 C5/4 | C5/2 E5/2 G5/2 C6/2 B5/4 G5/4 | A5/8 F#5/4 D5/4' },
+        B: { chords: ['Em', 'C', 'G', 'D7', 'Em', 'C', 'Am', 'D'], bass: 'walk', arp: 'up8', arpInst: 'triangle', arpVol: 0.06, drums: 'tribal', harm: true,
+          lead: 'B5/6 A5/2 G5/4 E5/4 | G5/6 E5/2 C5/8 | D5/4 G5/4 B5/4 D6/4 | C6/4 A5/4 F#5/8 | E6/6 D6/2 B5/4 G5/4 | C6/4 G5/4 E5/8 | A5/2 B5/2 C6/4 E5/4 A5/4 | F#5/4 A5/4 D6/8' },
+      },
     },
+    // «В пещере горного короля» (Э. Григ): каждая часть добавляет инструменты
     cave: {
-      bpm: 84, chords: ['Em', 'Cmaj7', 'Am', 'B', 'Em', 'Cmaj7', 'Am', 'B'], bass: 'whole', arp: 'up8', arpInst: 'triangle', arpVol: 0.07, drums: 'soft', drumVol: 0.35, leadInst: 'p12', leadVol: 0.12,
-      lead: 'B5/6 G5/2 E5/8  B5/4 G5/4 E5/4 C5/4  A5/6 C6/2 E5/8  D#5/4 F#5/4 B5/8  E6/6 D6/2 B5/8  C6/4 B5/4 G5/8  A5/4 E5/4 C5/4 A4/4  B4/16',
+      bpm: 116, form: ['A1', 'A2', 'T', 'A3'], leadInst: 'triangle', leadVol: 0.24,
+      parts: {
+        A1: { chords: ['Bm', 'C#7:8', 'C:8', 'Bm', 'D', 'Bm', 'C#7:8', 'C:8', 'Bm', 'D'], bass: 'quarter', arp: 'none', drums: 'none',
+          lead: 'B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/4 | F5/2 C#5/2 F5/4 E5/2 C5/2 E5/4 | B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/2 B5/2 | A5/2 F#5/2 D5/2 F#5/2 A5/8 | B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/4 | F5/2 C#5/2 F5/4 E5/2 C5/2 E5/4 | B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/2 B5/2 | A5/2 F#5/2 D5/2 F#5/2 A5/8' },
+        A2: { chords: ['Bm', 'C#7:8', 'C:8', 'Bm', 'D', 'Bm', 'C#7:8', 'C:8', 'Bm', 'D'], bass: 'quarter', arp: 'none', drums: 'soft', leadInst: 'p12', leadVol: 0.13,
+          lead: 'B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/4 | F5/2 C#5/2 F5/4 E5/2 C5/2 E5/4 | B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/2 B5/2 | A5/2 F#5/2 D5/2 F#5/2 A5/8 | B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/4 | F5/2 C#5/2 F5/4 E5/2 C5/2 E5/4 | B4/2 C#5/2 D5/2 E5/2 F#5/2 D5/2 F#5/2 B5/2 | A5/2 F#5/2 D5/2 F#5/2 A5/8' },
+        T: { chords: ['F#m', 'G#7:8', 'G:8', 'F#m', 'A', 'F#m', 'G#7:8', 'G:8', 'F#m', 'A'], bass: 'pulse8', arp: 'stab', drums: 'march', leadInst: 'p25', leadVol: 0.13,
+          lead: 'F#4/2 G#4/2 A4/2 B4/2 C#5/2 A4/2 C#5/4 | C5/2 G#4/2 C5/4 B4/2 G4/2 B4/4 | F#4/2 G#4/2 A4/2 B4/2 C#5/2 A4/2 C#5/2 F#5/2 | E5/2 C#5/2 A4/2 C#5/2 E5/8 | F#4/2 G#4/2 A4/2 B4/2 C#5/2 A4/2 C#5/4 | C5/2 G#4/2 C5/4 B4/2 G4/2 B4/4 | F#4/2 G#4/2 A4/2 B4/2 C#5/2 A4/2 C#5/2 F#5/2 | E5/2 C#5/2 A4/2 C#5/2 E5/8' },
+        A3: { chords: ['Bm', 'C#7:8', 'C:8', 'Bm', 'D', 'Bm', 'C#7:8', 'C:8', 'Bm', 'F#'], bass: 'gallop', arp: 'up8', arpVol: 0.04, drums: 'fast', leadInst: 'p25', leadVol: 0.15, harm: true,
+          lead: 'B5/2 C#6/2 D6/2 E6/2 F#6/2 D6/2 F#6/4 | F6/2 C#6/2 F6/4 E6/2 C6/2 E6/4 | B5/2 C#6/2 D6/2 E6/2 F#6/2 D6/2 F#6/2 B6/2 | A6/2 F#6/2 D6/2 F#6/2 A6/8 | B5/2 C#6/2 D6/2 E6/2 F#6/2 D6/2 F#6/4 | F6/2 C#6/2 F6/4 E6/2 C6/2 E6/4 | B5/2 C#6/2 D6/2 E6/2 F#6/2 D6/2 F#6/2 B6/2 | F#6/2 C#6/2 A#5/2 F#5/2 r/8' },
+      },
     },
     ice: {
-      bpm: 100, chords: ['F#m', 'D', 'A', 'E', 'F#m', 'D', 'A', 'E'], bass: 'whole', arp: 'up', arpInst: 'p12', arpVol: 0.035, arpShift: 12, drums: 'half', drumVol: 0.35, leadInst: 'triangle', leadVol: 0.24,
-      lead: 'C#6/4 A5/4 F#5/4 A5/4  F#5/6 E5/2 D5/8  E5/4 A5/4 C#6/4 B5/4  B5/8 G#5/4 E5/4  F#5/2 A5/2 C#6/4 E6/4 C#6/4  D6/4 C#6/2 A5/2 F#5/8  E5/4 A5/4 B5/4 C#6/4  B5/12 r/4',
+      bpm: 96, form: ['A', 'B', 'A'], leadInst: 'bell', leadVol: 0.2,
+      parts: {
+        A: { chords: ['Am', 'F', 'C', 'G', 'Am', 'F', 'E', 'E7'], bass: 'whole', arp: 'up8', arpInst: 'triangle', arpVol: 0.06, arpShift: -12, drums: 'half', drumVol: 0.3,
+          lead: 'E6/2 C6/2 A5/2 C6/2 E6/4 D6/2 C6/2 | C6/6 A5/2 F5/8 | G5/2 C6/2 E6/2 G6/2 E6/4 C6/4 | D6/8 B5/4 G5/4 | A5/2 C6/2 E6/2 A6/2 G6/2 E6/2 C6/4 | F6/4 E6/2 C6/2 A5/8 | G#5/4 B5/4 E6/4 D6/4 | B5/12 r/4' },
+        B: { chords: ['Dm', 'G', 'C', 'Am', 'Dm', 'G7', 'E7', 'Am'], bass: 'walk', arp: 'up8', arpInst: 'triangle', arpVol: 0.06, arpShift: -12, drums: 'half', drumVol: 0.3,
+          lead: 'F6/6 E6/2 D6/4 A5/4 | B5/6 C6/2 D6/8 | E6/4 G6/4 E6/4 C6/4 | A5/12 r/4 | D6/2 F6/2 A6/4 G6/2 F6/2 D6/4 | G6/6 F6/2 D6/4 B5/4 | G#5/4 E6/4 D6/2 B5/2 G#5/4 | A5/16' },
+      },
     },
     volcano: {
-      bpm: 148, chords: ['Cm', 'Ab', 'Bb', 'G', 'Cm', 'Ab', 'Bb', 'G'], bass: 'gallop', arp: 'stab', arpVol: 0.04, drums: 'fast', fill: true,
-      lead: 'C5/2 C5/2 Eb5/2 G5/2 C6/4 G5/2 Eb5/2  Ab5/4 G5/2 Eb5/2 C5/8  D5/2 F5/2 Bb5/4 F5/2 Bb5/2 D6/4  B5/8 D6/4 G5/4  G5/2 C6/2 Eb6/4 D6/2 C6/2 G5/4  Ab5/4 C6/4 Eb6/4 C6/4  D6/4 Bb5/4 F5/4 D5/4  B4/2 D5/2 G5/4 B5/8',
+      bpm: 150, form: ['A', 'B', 'A'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        A: { chords: ['Cm', 'Cm', 'Ab', 'Bb', 'Cm', 'Cm', 'Ab', 'G7'], bass: 'gallop', arp: 'stab', drums: 'fast',
+          lead: 'C5/2 C5/2 r/2 G4/2 C5/2 Eb5/2 r/2 D5/2 | Eb5/2 C5/2 r/2 G4/2 C5/4 G5/4 | Ab5/6 G5/2 Eb5/4 C5/4 | D5/4 F5/4 Bb5/8 | C6/2 C6/2 r/2 G5/2 C6/2 Eb6/2 r/2 D6/2 | Eb6/2 D6/2 C6/2 G5/2 Eb5/4 G5/4 | Ab5/4 C6/4 Eb6/4 C6/4 | B5/4 D6/4 G6/4 F6/2 D6/2' },
+        B: { chords: ['Fm', 'Fm', 'Eb', 'Eb', 'Db', 'Db', 'G', 'G7'], bass: 'pulse8', arp: 'up8', arpVol: 0.04, drums: 'rock', harm: true,
+          lead: 'F5/4 Ab5/4 C6/6 Bb5/2 | Ab5/4 F5/4 C5/8 | G5/4 Bb5/4 Eb6/6 D6/2 | Bb5/4 G5/4 Eb5/8 | F5/4 Ab5/4 Db6/6 C6/2 | Ab5/8 F5/8 | G5/2 B5/2 D6/2 G6/2 F6/2 D6/2 B5/4 | D6/2 B5/2 G5/2 F5/2 D5/2 B4/2 G4/4' },
+      },
     },
     sky: {
-      bpm: 128, chords: ['D', 'G', 'Bm', 'A', 'G', 'A', 'D', 'D'], bass: 'pulse8', arp: 'up', arpVol: 0.035, drums: 'rock', fill: true,
-      lead: 'A5/4 F#5/2 A5/2 D6/8  B5/4 G5/2 B5/2 D6/4 B5/4  F#5/4 D5/2 F#5/2 B5/6 A5/2  E5/4 C#6/4 A5/8  D6/4 B5/4 G5/4 B5/4  C#6/4 A5/4 E5/4 A5/4  F#5/2 A5/2 D6/4 E6/4 F#6/4  D6/12 r/4',
+      bpm: 128, form: ['A', 'B', 'A'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        A: { chords: ['D', 'Bm', 'G', 'A', 'D', 'Bm', 'G:8', 'A:8', 'D'], bass: 'pulse8', arp: 'up8', arpVol: 0.04, drums: 'rock',
+          lead: 'A4/2 D5/2 F#5/2 A5/6 F#5/2 D5/2 | B5/4 A5/2 F#5/2 D5/4 B4/4 | D5/2 G5/2 B5/2 D6/6 B5/2 G5/2 | C#6/8 A5/4 E5/4 | F#5/2 A5/2 D6/2 F#6/6 E6/2 D6/2 | D6/4 B5/4 F#5/8 | G5/2 B5/2 D6/4 A5/2 C#6/2 E6/4 | D6/12 r/4' },
+        B: { chords: ['G', 'A', 'F#m', 'Bm', 'Em', 'A7', 'D', 'A'], bass: 'walk', arp: 'up8', arpVol: 0.04, drums: 'groove', harm: true,
+          lead: 'B5/6 A5/2 G5/4 D5/4 | C#6/6 B5/2 A5/4 E5/4 | A5/4 F#5/4 C#6/8 | B5/4 D6/4 F#6/8 | G6/6 F#6/2 E6/4 B5/4 | A5/4 C#6/4 E6/4 G6/4 | F#6/6 E6/2 D6/4 A5/4 | C#6/4 E6/4 A5/8' },
+      },
     },
+    // тема из «Лебединого озера» (П. И. Чайковский) и её развитие
     temple: {
-      bpm: 100, chords: ['Bm', 'G', 'Em', 'F#', 'Bm', 'G', 'Em', 'F#'], bass: 'walk', arp: 'pad', arpVol: 0.06, drums: 'half', drumVol: 0.4, leadInst: 'p25', leadVol: 0.13,
-      lead: 'B4/4 D5/4 F#5/6 E5/2  D5/4 B4/4 G4/8  E5/4 G5/4 B5/4 A5/2 G5/2  A#5/8 F#5/4 C#5/4  F#5/4 B5/4 D6/6 C#6/2  B5/4 G5/4 D5/8  E5/2 G5/2 B5/4 E6/4 D6/4  C#6/4 A#5/4 F#5/8',
+      bpm: 100, form: ['A', 'B', 'A'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        A: { chords: ['Bm', 'Bm', 'Bm', 'Bm', 'G', 'Em', 'F#7', 'Bm'], bass: 'walk', arp: 'pad', arpVol: 0.05, drums: 'half', drumVol: 0.35,
+          lead: 'F#5/8 B4/2 C#5/2 D5/2 E5/2 | F#5/12 D5/4 | F#5/12 D5/4 | F#5/4 D5/2 F#5/2 B4/2 D5/2 B4/4 | G4/4 D5/4 B4/8 | E5/4 G5/4 B5/6 A5/2 | A#5/4 F#5/4 C#5/4 E5/4 | D5/4 C#5/4 B4/8' },
+        B: { chords: ['G', 'A', 'F#m', 'Bm', 'Em', 'F#', 'G', 'F#'], bass: 'walk', arp: 'up8', arpVol: 0.04, drums: 'march', drumVol: 0.4, harm: true,
+          lead: 'D5/4 G5/4 B5/6 A5/2 | C#6/6 B5/2 A5/4 E5/4 | F#5/4 A5/4 C#6/8 | B5/6 A5/2 F#5/4 D5/4 | G5/4 B5/4 E6/6 D6/2 | C#6/4 A#5/4 F#5/8 | B5/4 D6/4 G6/4 F#6/2 E6/2 | F#6/8 C#6/4 A#5/4' },
+      },
     },
     boss: {
-      bpm: 160, chords: ['Am', 'Am', 'F', 'G', 'Am', 'Am', 'F', 'E'], bass: 'gallop', arp: 'up', arpVol: 0.035, drums: 'fast', fill: true,
-      lead: 'A4/2 A4/2 C5/2 A4/2 E5/4 D5/2 C5/2  A4/2 A4/2 C5/2 E5/2 A5/4 G5/4  F5/4 E5/2 C5/2 A4/4 C5/4  B4/4 D5/4 G5/4 F5/4  A5/2 A5/2 G5/2 E5/2 C6/4 B5/2 A5/2  E5/2 A5/2 C6/2 E6/2 C6/4 A5/4  C6/4 A5/2 F5/2 A5/4 C6/4  B5/4 G#5/4 E5/8',
+      bpm: 164, form: ['A', 'B', 'A'], leadInst: 'p25', leadVol: 0.14,
+      parts: {
+        A: { chords: ['Am', 'Am', 'F', 'G', 'Am', 'Am', 'F', 'E'], bass: 'gallop', arp: 'up', arpVol: 0.03, drums: 'fast',
+          lead: 'A4/2 A4/2 E5/2 A4/2 A4/2 F5/2 E5/4 | A4/2 A4/2 E5/2 A4/2 G5/4 E5/4 | F5/2 F5/2 A5/2 F5/2 C6/4 A5/4 | G5/2 G5/2 B5/2 G5/2 D6/4 B5/4 | A5/2 A5/2 C6/2 A5/2 E6/4 D6/2 C6/2 | B5/2 C6/2 A5/4 E5/8 | F5/2 A5/2 C6/2 F6/2 E6/2 C6/2 A5/4 | G#5/4 B5/4 E6/4 D6/4' },
+        B: { chords: ['Dm', 'Dm', 'Am', 'Am', 'Bb', 'Bb', 'E7', 'E7'], bass: 'pulse8', arp: 'stab', drums: 'rock', harm: true,
+          lead: 'D5/4 F5/4 A5/6 G5/2 | F5/4 D5/4 A4/8 | C5/4 E5/4 A5/6 G#5/2 | A5/4 E5/4 C5/8 | D5/4 F5/4 Bb5/6 A5/2 | Bb5/4 D6/4 F6/8 | E6/2 D6/2 B5/2 G#5/2 E5/2 D5/2 B4/2 G#4/2 | E5/2 r/2 E5/2 r/2 E5/2 G#5/2 B5/2 D6/2' },
+      },
     },
+    // Токката ре минор (И. С. Бах) — финальный бой
+    final: {
+      bpm: 150, form: ['T', 'F', 'F2', 'T'], leadInst: 'organ', leadVol: 0.12,
+      parts: {
+        T: { chords: ['Dm', 'A:8', 'Dm:8', 'Dm', 'A:8', 'Dm:8', 'A:8', 'Dm:8', 'C#dim7', 'Dm', 'A7'], bass: 'whole', arp: 'pad', arpVol: 0.05, drums: 'none',
+          lead: 'A5/1 G5/1 A5/14 | G5/1 F5/1 E5/1 D5/1 C#5/4 D5/8 | A4/1 G4/1 A4/14 | E4/2 F4/2 C#4/4 D4/8 | G4/1 F4/1 E4/1 D4/1 C#4/4 D4/8 | C#4/2 E4/2 G4/2 Bb4/2 C#5/2 E5/2 G5/2 Bb5/2 | D6/16 | C#6/4 A5/4 E5/4 C#5/4' },
+        F: { chords: ['Dm', 'A', 'Gm', 'A', 'Dm', 'Bb', 'A', 'Dm'], bass: 'gallop', arp: 'none', drums: 'fast', leadInst: 'p25', leadVol: 0.12,
+          lead: 'A5/1 D5/1 A5/1 F5/1 A5/1 D5/1 A5/1 F5/1 A5/1 D5/1 A5/1 F5/1 A5/1 D5/1 A5/1 F5/1 | A5/1 C#5/1 A5/1 E5/1 A5/1 C#5/1 A5/1 E5/1 A5/1 C#5/1 A5/1 E5/1 A5/1 C#5/1 A5/1 E5/1 | Bb5/1 D5/1 Bb5/1 G5/1 Bb5/1 D5/1 Bb5/1 G5/1 Bb5/1 D5/1 Bb5/1 G5/1 Bb5/1 D5/1 Bb5/1 G5/1 | A5/1 C#5/1 A5/1 E5/1 A5/1 C#5/1 A5/1 E5/1 G5/1 E5/1 C#5/1 A4/1 E5/1 C#5/1 A4/1 E4/1 | D6/2 A5/2 F5/2 D5/2 F5/2 A5/2 D6/4 | D6/2 Bb5/2 F5/2 D5/2 F5/2 Bb5/2 D6/4 | C#6/2 A5/2 E5/2 C#5/2 E5/2 A5/2 C#6/4 | D6/8 A5/4 F5/4' },
+        F2: { chords: ['Dm', 'A', 'Gm', 'A', 'Dm', 'Bb', 'A', 'A7'], bass: 'gallop', arp: 'up8', arpVol: 0.035, drums: 'fast', leadInst: 'organ', leadVol: 0.11, harm: true,
+          lead: 'D6/4 A5/4 F5/4 A5/4 | E6/4 C#6/4 A5/4 C#6/4 | D6/4 Bb5/4 G5/4 Bb5/4 | C#6/6 B5/2 A5/8 | F6/6 E6/2 D6/4 A5/4 | F6/6 D6/2 Bb5/8 | E6/4 C#6/4 A5/4 E5/4 | G5/4 E5/4 C#5/4 A4/4' },
+      },
+    },
+    // «Коробейники» — песенка лавки
     shop: {
-      bpm: 96, chords: ['F', 'Dm', 'Bb', 'C', 'F', 'Dm', 'Bb', 'C'], bass: 'walk', arp: 'up8', arpInst: 'triangle', arpVol: 0.06, drums: 'shuffle', drumVol: 0.35, leadInst: 'p12', leadVol: 0.12,
-      lead: 'C5/2 F5/2 A5/4 G5/2 F5/2 C5/4  D5/4 F5/4 A5/6 G5/2  F5/4 D5/2 F5/2 Bb5/4 A5/4  G5/8 E5/4 C5/4  A5/4 C6/4 A5/2 F5/2 C5/4  D5/2 F5/2 A5/4 D6/4 C6/4  Bb5/4 A5/4 F5/4 D5/4  E5/4 G5/4 C6/8',
+      bpm: 132, form: ['A', 'A', 'B', 'A'], leadInst: 'p12', leadVol: 0.13,
+      parts: {
+        A: { chords: ['Am:8', 'E7:8', 'Am', 'E7:8', 'Am:8', 'Am', 'Dm', 'C', 'E7:8', 'Am:8', 'Am'], bass: 'pulse8', arp: 'stab', arpVol: 0.04, drums: 'shuffle', drumVol: 0.35,
+          lead: 'E5/4 B4/2 C5/2 D5/4 C5/2 B4/2 | A4/4 A4/2 C5/2 E5/4 D5/2 C5/2 | B4/6 C5/2 D5/4 E5/4 | C5/4 A4/4 A4/8 | r/2 D5/4 F5/2 A5/4 G5/2 F5/2 | E5/6 C5/2 E5/4 D5/2 C5/2 | B4/4 B4/2 C5/2 D5/4 E5/4 | C5/4 A4/4 A4/8' },
+        B: { chords: ['Am', 'E7', 'Am', 'E7', 'Am', 'E7', 'Am', 'E7'], bass: 'whole', arp: 'up8', arpInst: 'triangle', arpVol: 0.06, drums: 'soft', drumVol: 0.3, leadInst: 'triangle', leadVol: 0.22,
+          lead: 'E5/8 C5/8 | D5/8 B4/8 | C5/8 A4/8 | G#4/8 B4/8 | E5/8 C5/8 | D5/8 B4/8 | C5/4 E5/4 A5/8 | G#5/16' },
+      },
     },
+    // «Ода к радости» (Л. ван Бетховен) — финал
     ending: {
-      bpm: 84, chords: ['C', 'Am', 'F', 'G', 'C', 'Am', 'F', 'G'], bass: 'whole', arp: 'pad', arpVol: 0.06, drums: 'soft', drumVol: 0.3, leadInst: 'triangle', leadVol: 0.26,
-      lead: 'E5/8 D5/4 C5/4  C5/4 E5/4 A5/8  A5/6 G5/2 F5/8  G5/8 B4/4 D5/4  C6/8 B5/4 G5/4  A5/8 E5/4 C5/4  F5/4 A5/4 C6/4 A5/4  G5/16',
+      bpm: 100, form: ['A', 'B', 'A'], leadInst: 'triangle', leadVol: 0.24,
+      parts: {
+        A: { chords: ['D:8', 'G:8', 'A:8', 'D:8', 'D:8', 'A:8', 'D:8', 'A:8', 'D:8', 'G:8', 'A:8', 'D:8', 'D:8', 'A:8', 'A:8', 'D:8'], bass: 'walk', arp: 'pad', arpVol: 0.05, drums: 'soft', drumVol: 0.3,
+          lead: 'F#5/4 F#5/4 G5/4 A5/4 | A5/4 G5/4 F#5/4 E5/4 | D5/4 D5/4 E5/4 F#5/4 | F#5/6 E5/2 E5/8 | F#5/4 F#5/4 G5/4 A5/4 | A5/4 G5/4 F#5/4 E5/4 | D5/4 D5/4 E5/4 F#5/4 | E5/6 D5/2 D5/8' },
+        B: { chords: ['A:8', 'D:8', 'A:8', 'D:8', 'A:8', 'D:8', 'D:8', 'A:8', 'D:8', 'G:8', 'A:8', 'D:8', 'D:8', 'A:8', 'A:8', 'D:8'], bass: 'walk', arp: 'up8', arpInst: 'triangle', arpVol: 0.05, drums: 'soft', drumVol: 0.3, leadInst: 'p25', leadVol: 0.13, harm: true,
+          lead: 'E5/4 E5/4 F#5/4 D5/4 | E5/4 F#5/2 G5/2 F#5/4 D5/4 | E5/4 F#5/2 G5/2 F#5/4 E5/4 | D5/4 E5/4 A4/8 | F#5/4 F#5/4 G5/4 A5/4 | A5/4 G5/4 F#5/4 E5/4 | D5/4 D5/4 E5/4 F#5/4 | E5/6 D5/2 D5/8' },
+      },
     },
   };
 

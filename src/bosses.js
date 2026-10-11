@@ -650,7 +650,7 @@ G.BossPrince = class extends G.Boss {
           if (this.st === 110) {
             this.form = 2; this.w = 80; this.h = 66;
             this.x = A.x + 240 - 40; this.y = game.cam.y + 20;
-            game.flashScreen('#ff80e0', 16); G.Audio.play('explode'); G.Audio.music('boss', true);
+            game.flashScreen('#ff80e0', 16); G.Audio.play('explode'); G.Audio.music('final', true);
             this.set('idle'); this.cool = 60;
           }
           break;

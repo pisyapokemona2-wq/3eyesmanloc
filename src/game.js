@@ -128,6 +128,7 @@ G.Game = class Game {
     G.Particles.sparks((j % L.w) * 16 + 8, ((j / L.w) | 0) * 16 + 8, 12, '#fff3a0', 2);
     G.UI.toast(`ТАЙНИК НАЙДЕН! ${this.levelSecrets}/${L.secrets.length}`);
   }
+  bossTrack() { return this.levelIdx === G.LEVELS.length - 1 ? 'final' : 'boss'; }
   lifeTaken(s) { return !!(this.takenLives && this.takenLives.has(this.levelIdx + ':' + s.tx + ':' + s.ty)); }
 
   // ---------------------------------------------------------------- API для сущностей
@@ -218,8 +219,8 @@ G.Game = class Game {
     switch (s) {
       case 'title': G.Audio.music('title'); break;
       case 'intro': G.Audio.stopMusic(); break;
-      case 'story': G.Audio.music('shop'); this.storyI = 0; this.storyT = 0; break;
-      case 'play': G.Audio.music(this.bossStarted ? 'boss' : G.LEVELS[this.levelIdx].music); break;
+      case 'story': G.Audio.music('story'); this.storyI = 0; this.storyT = 0; break;
+      case 'play': G.Audio.music(this.bossStarted ? this.bossTrack() : G.LEVELS[this.levelIdx].music); break;
       case 'gameover': G.Audio.stopMusic(); break;
       case 'clear': G.Audio.stopMusic(); G.Audio.play('clear'); break;
       case 'shop': G.Audio.music('shop'); break;
@@ -285,7 +286,7 @@ G.Game = class Game {
       this.bossStarted = true;
       L.closeGate();
       this.boss = this.spawn(G.makeBoss(G.LEVELS[this.levelIdx].boss, this));
-      G.Audio.music('boss');
+      G.Audio.music(this.bossTrack());
       G.Audio.play('roar');
       this.shake(4, 30);
       G.UI.bossBanner(this.boss.name);
