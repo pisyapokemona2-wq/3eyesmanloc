@@ -118,14 +118,21 @@ G.BossBull = class extends G.Boss {
     const p = game.player, r = Math.random();
     this.facing = p.cx < this.cx ? -1 : 1;
     if (this.ph === 1) {
-      if (r < 0.6) this.set('prep'); else this.leap(p);
+      if (r < 0.6) this.set('prep'); else this.leap(p, game);
     } else if (this.ph === 2) {
-      if (r < 0.45) { this.bounces = 2; this.set('prep'); } else if (r < 0.8) { this.hops = 3; this.set('hop'); } else this.leap(p);
+      if (r < 0.45) { this.bounces = 2; this.set('prep'); } else if (r < 0.8) { this.hops = 3; this.set('hop'); } else this.leap(p, game);
     } else {
       if (r < 0.35) { this.bounces = 3; this.set('prep'); } else if (r < 0.6) this.set('breath'); else if (r < 0.8) this.set('skyjump'); else { this.hops = 4; this.set('hop'); }
     }
   }
-  leap(p) { this.set('jump'); this.vy = -7.4; this.vx = (G.clamp(p.cx, this.L + 30, this.R - 30) - this.cx) / 48; G.Audio.play('jump'); }
+  // прыжок к герою, но не дальше 7–9 тайлов; место приземления подсвечивается
+  leap(p, game) {
+    const maxD = [0, 110, 130, 150][this.ph];
+    const tx = G.clamp(this.cx + G.clamp(p.cx - this.cx, -maxD, maxD), this.L + this.w / 2, this.R - this.w / 2);
+    this.set('jump'); this.vy = -7.4; this.vx = (tx - this.cx) / 49;
+    game.spawn(new G.Warning(tx - this.w / 2, this.arena.floor - 16, this.w, 16, 40));
+    G.Audio.play('jump');
+  }
   land(game, power) {
     const A = this.arena;
     this.y = A.floor - this.h; this.vy = 0; this.vx = 0;
@@ -174,7 +181,7 @@ G.BossBull = class extends G.Boss {
       case 'stun': this.vx = 0; if (this.st > [0, 80, 70, 60][this.ph]) this.set('idle'); break;
       case 'hop':
         // серия коротких прыжков к герою с волнами
-        if (this.st === 1) { this.vy = -5; this.vx = G.clamp((p.cx - this.cx) / 40, -3, 3); this.facing = p.cx < this.cx ? -1 : 1; G.Audio.play('jump'); }
+        if (this.st === 1) { this.vy = -5; this.vx = G.clamp((p.cx - this.cx) / 40, -2, 2); this.facing = p.cx < this.cx ? -1 : 1; G.Audio.play('jump'); }
         this.vy += 0.32;
         if (this.st > 2 && this.bottom + this.vy >= A.floor && this.vy > 0) {
           this.land(game, 0);
@@ -198,14 +205,15 @@ G.BossBull = class extends G.Boss {
         // прыжок за пределы экрана и падение по тени
         if (this.st === 1) { this.vy = -12; this.vx = 0; G.Audio.play('jump'); game.shake(3, 8); }
         this.vy += 0.15;
-        if (this.bottom < game.cam.y - 20) { this.set('fall'); this.vy = 0; this.y = game.cam.y - this.h - 120; this.tx = G.clamp(p.cx - this.w / 2, this.L, this.R - this.w); }
+        if (this.bottom < game.cam.y - 20) { this.set('fall'); this.vy = 0; this.y = game.cam.y - this.h - 120; this.fromX = this.x; }
         break;
       case 'fall':
-        if (this.st < 50) {
-          this.tx = G.clamp(p.cx - this.w / 2, this.L, this.R - this.w);
+        if (this.st < 30) {
+          // смещается к герою, но не дальше 150 px от места взлёта
+          this.tx = G.clamp(G.clamp(p.cx - this.w / 2, this.fromX - 150, this.fromX + 150), this.L, this.R - this.w);
           this.x += (this.tx - this.x) * 0.12;
-          if (this.st === 1) game.spawn(new G.Warning(this.x - 4, A.floor - 70, this.w + 8, 70, 50));
-        } else {
+        } else if (this.st === 30) game.spawn(new G.Warning(this.x - 4, A.floor - 70, this.w + 8, 70, 34));
+        else if (this.st >= 64) {
           this.vy += 0.6;
           if (this.bottom + this.vy >= A.floor) { this.land(game, 3); this.rain(game, 4, 'rock', 20); this.set('stun'); this.st = 30; }
         }
@@ -217,7 +225,7 @@ G.BossBull = class extends G.Boss {
     }
     this.x = G.clamp(this.x + this.vx, this.L, this.R - this.w);
     this.y += this.vy;
-    if (this.state !== 'fall' || this.st >= 50) this.contact(game, this.state === 'charge' || this.state === 'fall' ? 2 : 1);
+    if (this.state !== 'fall' || this.st >= 64) this.contact(game, this.state === 'charge' || this.state === 'fall' ? 2 : 1);
   }
   draw() {
     const A = G.Art;
