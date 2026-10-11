@@ -329,7 +329,7 @@ G.Game = class Game {
         if (this.finalRetry || tries > 0) G.UI.toast(`ПОПЫТКА ${tries + 1}` + (ck < 3 ? (tries < 10 ? ` · сохранение формы через ${10 - tries}` : ' · следующая форма сохранится') : ''));
         this.finalRetry = false;
       }
-      for (const e of this.entities) if (e.isEnemy && !e.isBoss && e.x > A.x) e.dead = true;
+      for (const e of this.entities) if (e.isEnemy && !e.isBoss) e.dead = true; // все враги уровня (летающие догоняют героя)
     }
     if (this.waitAbility && this.abil.has(G.LEVELS[this.levelIdx].unlock)) { this.waitAbility = false; this.bossDoneT = 1; }
     if (this.bossDoneT > 0) {

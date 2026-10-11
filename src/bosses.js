@@ -28,6 +28,34 @@ G.Boss = class Boss extends G.Enemy {
   canRage() { return !['jump', 'slam', 'drop', 'dive', 'skyjump', 'fall', 'arc', 'charge', 'bite', 'roll', 'leap', 'reborn'].includes(this.state); }
   rageText(ph) { return ph >= this.phases ? `${this.name}: ПОСЛЕДНЯЯ ЯРОСТЬ!` : `${this.name} В ЯРОСТИ!`; }
   onRage() {}
+  // Передышка после атаки: босс ничего не делает и получает больше урона — окно для атаки
+  // призванный призрак живёт 8 секунд
+  summonGhost(game, x, y) {
+    const g = new G.Ghost(x, y); g.active = true; game.spawn(g);
+    G.Particles.fx('fx_ring', x, y - 8);
+    game.later(480, () => { if (!g.dead) { g.dead = true; G.Particles.fx('fx_puff', g.cx, g.cy); } });
+  }
+  recover(frames, game = G.game) {
+    this.set('recover'); this.recT = frames; this.vx = 0;
+    // каждая третья передышка — длинная: босс выдыхается, его снаряды гаснут
+    this.attacks = (this.attacks || 0) + 1;
+    if (this.attacks % 3 === 0) {
+      this.recT = Math.max(frames, 100);
+      for (const e of game.entities) if (e instanceof G.EnemyShot && !e.dead) { e.dead = true; G.Particles.fx('fx_puff', e.cx, e.cy); }
+      G.Audio.play('recall');
+    }
+  }
+  recoverUpdate(game) {
+    this.dmgMul = 1.25;
+    this.recoverMove && this.recoverMove(game);
+    if (this.st % 10 === 0) G.Particles.add({ x: this.cx + G.rand(-10, 10), y: this.y - 4, vy: -0.5, life: 18, color: '#ffffa0', kind: 'spark', add: true });
+    this.contact(game, 1);
+    if (this.st >= this.recT) { this.dmgMul = 1; this.set('idle'); this.cool = Math.min(this.cool || 0, 30); }
+  }
+  drawDizzy() {
+    if (this.state !== 'recover') return;
+    for (let i = 0; i < 3; i++) { const a = this.t * 0.14 + i * 2.1; G.Gfx.spr('fx_spark0', this.cx + Math.cos(a) * 12, this.y - 6 + Math.sin(a) * 3); }
+  }
   rageMove() { this.vx = 0; this.vy = 0; }
   rageUpdate(game) {
     if (this.st === 1) {
@@ -83,12 +111,14 @@ G.Boss = class Boss extends G.Enemy {
   ring(game, x, y, n, speed, kind = 'orb', off = 0, opts = {}) {
     for (let i = 0; i < n; i++) {
       const a = off + (i / n) * Math.PI * 2;
-      game.spawn(new G.EnemyShot(x, y, Math.cos(a) * speed, Math.sin(a) * speed, kind, Object.assign({ ghost: true, life: 260 }, opts)));
+      game.spawn(new G.EnemyShot(x, y, Math.cos(a) * speed, Math.sin(a) * speed, kind, Object.assign({ ghost: true, life: 170 }, opts)));
     }
   }
   rain(game, n, kind, delay = 32, opts = {}) {
     for (let i = 0; i < n; i++) {
-      const rx = this.arena.x + 30 + Math.random() * (G.W - 60);
+      let rx = this.arena.x + 30 + Math.random() * (G.W - 60);
+      // не роняем камни туда, где стоит уязвимый босс (там игрок его бьёт)
+      if (opts.avoid) for (let k = 0; k < 6 && Math.abs(rx - this.cx) < this.w / 2 + 50; k++) rx = this.arena.x + 30 + Math.random() * (G.W - 60);
       game.spawn(new G.Warning(rx - 5, game.cam.y, 10, this.arena.floor - game.cam.y, delay + i * 5));
       game.later(delay + i * 5, () => game.spawn(new G.EnemyShot(rx, game.cam.y - 8, 0, 1, kind, Object.assign({ g: 0.2, r: 4, life: 200 }, opts))));
     }
@@ -101,9 +131,10 @@ G.Boss = class Boss extends G.Enemy {
     if (this.stage > this.ph && this.canRage()) { this.ph = this.stage; this.set('rage'); }
     this.invulnerable = this.state === 'rage' || this.state === 'reborn';
     if (this.state === 'rage') { this.rageUpdate(game); return; }
+    if (this.state === 'recover') { this.recoverUpdate(game); return; }
     this.think(game);
   }
-  spr(name, x, y, flip) { G.Gfx.spr(name, Math.round(x), Math.round(y), flip, this.flash >= 4 && !this.dying); }
+  spr(name, x, y, flip) { G.Gfx.spr(name, Math.round(x), Math.round(y), flip, this.flash >= 4 && !this.dying); if (this.state === 'recover' && !this._dz) { this._dz = true; this.drawDizzy(); this._dz = false; } }
 };
 
 // 1. СТАЛЬНОЙ БЫК -------------------------------------------------------------
@@ -120,9 +151,9 @@ G.BossBull = class extends G.Boss {
     if (this.ph === 1) {
       if (r < 0.6) this.set('prep'); else this.leap(p, game);
     } else if (this.ph === 2) {
-      if (r < 0.45) { this.bounces = 2; this.set('prep'); } else if (r < 0.8) { this.hops = 3; this.set('hop'); } else this.leap(p, game);
+      if (r < 0.45) { this.bounces = 1; this.set('prep'); } else if (r < 0.8) { this.hops = 3; this.set('hop'); } else this.leap(p, game);
     } else {
-      if (r < 0.35) { this.bounces = 3; this.set('prep'); } else if (r < 0.6) this.set('breath'); else if (r < 0.8) this.set('skyjump'); else { this.hops = 4; this.set('hop'); }
+      if (r < 0.35) { this.bounces = 2; this.set('prep'); } else if (r < 0.6) this.set('breath'); else if (r < 0.8) this.set('skyjump'); else { this.hops = 4; this.set('hop'); }
     }
   }
   // прыжок к герою, но не дальше 7–9 тайлов; место приземления подсвечивается
@@ -150,7 +181,7 @@ G.BossBull = class extends G.Boss {
       case 'idle':
         this.vx = 0;
         this.facing = p.cx < this.cx ? -1 : 1;
-        if (this.st > [0, 46, 32, 22][this.ph]) this.pick(game);
+        if (this.st > [0, 60, 48, 40][this.ph]) this.pick(game);
         break;
       case 'prep':
         if (this.st === 1) { G.Audio.play('roar'); game.spawn(new G.Warning(this.L, this.y, this.R - this.L, this.h, 30)); }
@@ -160,7 +191,7 @@ G.BossBull = class extends G.Boss {
       case 'charge': {
         this.vx = this.facing * [0, 4.4, 5.2, 6][this.ph];
         if (this.st % 4 === 0) G.Particles.dust(this.cx - this.facing * 22, this.bottom, 1);
-        if (hot && this.st % 7 === 0) game.spawn(new G.EnemyShot(this.cx - this.facing * 24, A.floor - 5, 0, 0, 'fire', { ghost: true, life: 80, r: 4 }));
+        if (hot && this.st % 7 === 0) game.spawn(new G.EnemyShot(this.cx - this.facing * 24, A.floor - 5, 0, 0, 'fire', { ghost: true, life: 45, r: 4 }));
         const hitWall = (this.facing < 0 && this.x <= this.L) || (this.facing > 0 && this.x + this.w >= this.R);
         if (hitWall) {
           this.x = this.facing < 0 ? this.L : this.R - this.w;
@@ -172,13 +203,13 @@ G.BossBull = class extends G.Boss {
             this.rain(game, 2, 'rock', 24);
           } else {
             this.set('stun');
-            this.rain(game, [0, 4, 5, 7][this.ph], 'rock', 28);
+            this.rain(game, [0, 3, 4, 4][this.ph], 'rock', 28, { avoid: true });
           }
         }
         break;
       }
       case 'turn': this.vx = 0; if (this.st % 4 === 0) G.Particles.fx('fx_puff', this.cx, this.y + 8); if (this.st > 16) this.set('charge'); break;
-      case 'stun': this.vx = 0; if (this.st > [0, 80, 70, 60][this.ph]) this.set('idle'); break;
+      case 'stun': this.vx = 0; if (this.st > [0, 90, 80, 80][this.ph]) this.set('idle'); break;
       case 'hop':
         // серия коротких прыжков к герою с волнами
         if (this.st === 1) { this.vy = -5; this.vx = G.clamp((p.cx - this.cx) / 40, -2, 2); this.facing = p.cx < this.cx ? -1 : 1; G.Audio.play('jump'); }
@@ -186,7 +217,7 @@ G.BossBull = class extends G.Boss {
         if (this.st > 2 && this.bottom + this.vy >= A.floor && this.vy > 0) {
           this.land(game, 0);
           this.hops--;
-          if (this.hops > 0) this.st = 0; else { this.set('idle'); }
+          if (this.hops > 0) this.st = 0; else this.recover(45);
         }
         break;
       case 'breath':
@@ -199,7 +230,7 @@ G.BossBull = class extends G.Boss {
           const k = (this.st - 30) / 20;
           for (let i = 0; i < 3; i++) game.spawn(new G.EnemyShot(this.cx + this.facing * 26, this.y + 10, this.facing * (2.2 + i * 1.1 + k * 0.4), -4.2 + i * 0.6, 'fire', { g: 0.18, r: 4 }));
         }
-        if (this.st > 96) this.set('idle');
+        if (this.st > 96) this.recover(55);
         break;
       case 'skyjump':
         // прыжок за пределы экрана и падение по тени
@@ -215,12 +246,12 @@ G.BossBull = class extends G.Boss {
         } else if (this.st === 30) game.spawn(new G.Warning(this.x - 4, A.floor - 70, this.w + 8, 70, 34));
         else if (this.st >= 64) {
           this.vy += 0.6;
-          if (this.bottom + this.vy >= A.floor) { this.land(game, 3); this.rain(game, 4, 'rock', 20); this.set('stun'); this.st = 30; }
+          if (this.bottom + this.vy >= A.floor) { this.land(game, 3); this.rain(game, 2, 'rock', 20, { avoid: true }); this.set('stun'); this.st = 10; }
         }
         break;
       case 'jump':
         this.vy += 0.3;
-        if (this.bottom + this.vy >= A.floor && this.vy > 0) { this.land(game, this.ph - 1); this.set('idle'); }
+        if (this.bottom + this.vy >= A.floor && this.vy > 0) { this.land(game, this.ph - 1); if (this.ph > 1) this.recover(30); else this.set('idle'); }
         break;
     }
     this.x = G.clamp(this.x + this.vx, this.L, this.R - this.w);
@@ -233,6 +264,7 @@ G.BossBull = class extends G.Boss {
     if (this.ph === 3 && !this.dying) G.Gfx.glow(this.cx, this.cy, 34 + Math.sin(this.t * 0.2) * 3, '#ff5020', 0.5);
     let n = st === 'charge' || st === 'prep' || st === 'turn' ? A.frame('b_bull_charge', this.t) : st === 'stun' ? 'b_bull_stun0' : (this.ph > 1 && (st === 'idle' || st === 'breath')) || st === 'rage' ? 'b_bull_angry0' : A.frame('b_bull_walk', st === 'idle' ? 0 : this.t);
     const shake = (st === 'prep' || st === 'rage' || st === 'breath') && this.t % 2 ? 1 : 0;
+    if (st === 'recover') n = 'b_bull_stun0';
     this.spr(n, this.cx + shake, this.bottom, this.facing < 0);
     if (this.state === 'stun') for (let i = 0; i < 3; i++) { const a = this.t * 0.12 + i * 2.1; G.Gfx.spr('fx_spark0', this.cx + this.facing * 20 + Math.cos(a) * 10, this.y - 4 + Math.sin(a) * 3); }
   }
@@ -445,24 +477,24 @@ G.BossSpider = class extends G.Boss {
       case 'storm': // спираль из кристальных осколков
         if (this.st % 5 === 0 && this.st < 90) {
           const a = this.st * 0.19;
-          for (const off of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) game.spawn(new G.EnemyShot(this.cx, this.cy, Math.cos(a + off) * 1.6, Math.sin(a + off) * 1.6, 'ice', { ghost: true, life: 220 }));
+          for (const off of [0, Math.PI]) game.spawn(new G.EnemyShot(this.cx, this.cy, Math.cos(a + off) * 1.6, Math.sin(a + off) * 1.6, 'ice', { ghost: true, life: 150 }));
           if (this.st % 15 === 0) G.Audio.play('enemyShot');
         }
-        if (this.st > 110) { this.set('idle'); this.cool = 40; }
+        if (this.st > 110) { this.recover(50); this.cool = 40; }
         break;
       case 'cage': // паутина веером + кристаллы с потолка
         if (this.st === 10) { for (let i = -3; i <= 3; i++) this.shoot(game, this.cx, this.bottom, 2.2, 'web', i * 0.28, { r: 5 }); G.Audio.play('enemyShot'); }
-        if (this.st === 30) this.rain(game, 7, 'ice', 30);
-        if (this.st > 80) { this.set('idle'); this.cool = 50; }
+        if (this.st === 30) this.rain(game, 4, 'ice', 30, { avoid: true });
+        if (this.st > 80) { this.recover(45); this.cool = 50; }
         break;
       case 'web':
         if (this.st % 16 === 1 && this.st < 50) { this.shoot(game, this.cx, this.bottom, 2.4, 'web', 0, { r: 5 }); G.Audio.play('enemyShot'); }
         if (fast && this.st === 40) this.shoot(game, this.cx, this.bottom, 2.6, 'ice');
-        if (this.st > 60) { this.set('idle'); this.cool = fast ? 40 : 70; }
+        if (this.st > 60) { this.recover(this.phase2 ? 45 : 30); this.cool = fast ? 60 : 70; }
         break;
       case 'shards':
         if (this.st === 20 || this.st === 45) { this.ring(game, this.cx, this.cy, 12, 1.9, 'ice', this.st * 0.1, { ghost: false }); G.Audio.play('enemyShot'); }
-        if (this.st > 70) { this.set('idle'); this.cool = 50; }
+        if (this.st > 70) { this.recover(40); this.cool = 50; }
         break;
       case 'dropAim':
         this.x = G.lerp(this.x, G.clamp(p.cx - this.w / 2, this.L, this.R - this.w), 0.1);
@@ -475,11 +507,10 @@ G.BossSpider = class extends G.Boss {
           this.y = A.floor - this.h; game.shake(5, 12); G.Audio.play('stomp');
           G.Particles.dust(this.cx, A.floor, 6);
           if (fast) { game.spawn(new G.Shockwave(this.x, A.floor, -1, 3)); game.spawn(new G.Shockwave(this.x + this.w, A.floor, 1, 3)); }
-          if (this.phase3) this.ring(game, this.cx, this.cy, 10, 1.8, 'ice', 0, { ghost: false });
           this.set('floor');
         }
         break;
-      case 'floor': this.dmgMul = 1.4; if (this.st > (fast ? 35 : 60)) { this.dmgMul = 1; this.set('climb'); } break;
+      case 'floor': this.dmgMul = 1.4; if (this.st > [0, 60, 50, 50][this.ph]) { this.dmgMul = 1; this.set('climb'); } break;
       case 'climb': this.y = G.lerp(this.y, topY, 0.06); if (this.st > 50) { this.set('idle'); this.cool = 40; } break;
       case 'spawn':
         if (this.st === 20 || this.st === 40) { const s = new G.Spiderling(this.cx, this.bottom + 10); s.facing = Math.random() < 0.5 ? -1 : 1; s.active = true; game.spawn(s); G.Audio.play('enemyShot'); }
@@ -526,7 +557,7 @@ G.BossGolem = class extends G.Boss {
           G.Audio.play('explode'); game.shake(7, 20);
           game.spawn(new G.Shockwave(this.x - 4, A.floor, -1, fast ? 3.2 : 2.6));
           game.spawn(new G.Shockwave(this.x + this.w + 4, A.floor, 1, fast ? 3.2 : 2.6));
-          this.rain(game, fast ? 7 : 5, 'ice', 20, { g: 0.25, r: 4 });
+          this.rain(game, [0, 4, 4, 5][this.ph], 'ice', 20, { g: 0.25, r: 4, avoid: true });
         }
         if (this.st > 50) this.set('rest');
         break;
@@ -543,7 +574,7 @@ G.BossGolem = class extends G.Boss {
         if (this.x <= this.L || this.x + this.w >= this.R) {
           this.x = G.clamp(this.x, this.L, this.R - this.w);
           G.Audio.play('explode'); game.shake(6, 14);
-          this.rain(game, 3, 'ice', 18, { g: 0.25, r: 4 });
+          this.rain(game, 2, 'ice', 18, { g: 0.25, r: 4, avoid: true });
           if (this.bounces-- > 0) this.vx = -this.vx; else { this.vx = 0; this.set('rest'); }
         }
         break;
@@ -551,12 +582,12 @@ G.BossGolem = class extends G.Boss {
         if (this.st === 1) { G.Audio.play('laser'); this.windDir = p.cx < this.cx ? 1 : -1; }
         game.wind = this.windDir * 0.9;
         if (this.st % 2 === 0) G.Particles.add({ x: this.windDir > 0 ? game.cam.x : game.cam.x + G.W, y: game.cam.y + G.rand(30, G.H - 20), vx: this.windDir * 5, vy: 0.6, life: 90, color: '#ffffff', kind: 'dot' });
-        if (this.st % 24 === 12) this.rain(game, 2, 'ice', 22, { g: 0.25, r: 4 });
-        if (this.st > 130) { game.wind = 0; this.set('idle'); this.cool = 40; }
+        if (this.st % 30 === 12) this.rain(game, 2, 'ice', 22, { g: 0.25, r: 4, avoid: true });
+        if (this.st > 130) { game.wind = 0; this.set('rest'); }
         break;
       case 'rest':
         if (this.st % 10 === 0) G.Particles.add({ x: this.cx, y: this.cy, vy: -0.6, life: 20, color: '#80e0ff', kind: 'spark', add: true });
-        if (this.st > [0, 100, 70, 60][this.ph]) { this.set('idle'); this.cool = 40; }
+        if (this.st > [0, 100, 90, 85][this.ph]) { this.set('idle'); this.cool = 40; }
         break;
     }
     this.x = G.clamp(this.x, this.L, this.R - this.w);
@@ -580,7 +611,7 @@ G.BossGolem = class extends G.Boss {
 // 6. ОГНЕННЫЙ ЗМЕЙ ---------------------------------------------------------------
 G.BossSerpent = class extends G.Boss {
   constructor(game) {
-    super(game, 26, 22, 75, 'serpent');
+    super(game, 26, 22, 62, 'serpent');
     const A = this.arena, L = game.level;
     this.lavaY = A.floor + 16;
     this.pits = [];
@@ -595,7 +626,7 @@ G.BossSerpent = class extends G.Boss {
     this.hist = []; this.nseg = 12;
     this.x = this.pits[0] - 13; this.y = this.lavaY + 60;
   }
-  hitTest(b) { return this.state === 'arc' && G.overlap({ x: this.x + 2, y: this.y + 2, w: this.w - 4, h: this.h - 4 }, b); }
+  hitTest(b) { return (this.state === 'arc' || this.state === 'recover') && G.overlap({ x: this.x + 2, y: this.y + 2, w: this.w - 4, h: this.h - 4 }, b); }
   seg(i) { const k = Math.min(this.hist.length - 1, (i + 1) * 5); return k >= 0 ? this.hist[k] : { x: this.cx, y: this.cy }; }
   launch(game) {
     const from = G.pick(this.pits);
@@ -612,23 +643,27 @@ G.BossSerpent = class extends G.Boss {
     for (let i = 0; i < 14; i++) G.Particles.add({ x: from + G.rand(-10, 10), y: this.lavaY, vx: G.rand(-1.5, 1.5), vy: G.rand(-4, -1.5), g: 0.18, life: G.randi(20, 36), color: '#ffb040', add: true });
   }
   canRage() { return this.state === 'idle' || this.state === 'under'; }
+  recoverMove() { this.y = G.lerp(this.y, this.lavaY - 20, 0.15); this.hist = []; }
   rageText(ph) { return ph === 3 ? 'ВУЛКАН ИЗВЕРГАЕТСЯ!' : 'ЗМЕЙ В ЯРОСТИ!'; }
   rageMove(game) { if (this.st % 4 === 0) for (const px of this.pits) G.Particles.add({ x: px + G.rand(-12, 12), y: this.lavaY, vx: G.rand(-1, 1), vy: G.rand(-4, -2), g: 0.15, life: 30, color: '#ffb040', add: true }); }
   eruption(game) {
     // фонтаны огня из всех лавовых ям
     G.Audio.play('lava'); game.shake(3, 10);
-    for (const px of this.pits) for (let i = 0; i < 4; i++) game.spawn(new G.EnemyShot(px + G.rand(-8, 8), this.lavaY - 4, G.rand(-1.4, 1.4), G.rand(-7.5, -5.5), 'fire', { g: 0.16, r: 4, ghost: true, life: 160 }));
+    for (const px of this.pits) for (let i = 0; i < 3; i++) game.spawn(new G.EnemyShot(px + G.rand(-8, 8), this.lavaY - 4, G.rand(-1.4, 1.4), G.rand(-7.5, -5.5), 'fire', { g: 0.16, r: 4, ghost: true, life: 120 }));
   }
   think(game) {
     const p = game.player, fast = this.phase2;
     if (this.state === 'idle' || this.state === 'under') {
-      if (this.st > [0, 70, 40, 30][this.ph]) this.launch(game);
-      if (this.phase3) { if (this.st === 6 || this.st === 22) this.eruption(game); }
-      else if (fast && this.st === 20) this.rain(game, 5, 'fire', 34, { ghost: true });
+      // каждые три прыжка — выныривает и отдыхает, высунув голову из лавы
+      if (this.y < this.lavaY + 40) this.y = G.lerp(this.y, this.lavaY + 44, 0.12); // ныряет обратно
+      if ((this.arcs || 0) >= 3 && this.st > 20) { this.arcs = 0; this.x = G.pick(this.pits) - this.w / 2; this.y = this.lavaY + 10; G.Particles.fx('fx_splash', this.cx, this.lavaY + 2); this.recover(100); return; }
+      if (this.st > [0, 70, 55, 50][this.ph]) { this.arcs = (this.arcs || 0) + 1; this.launch(game); }
+      if (this.phase3) { if (this.st === 6 && (this.erupt = !this.erupt)) this.eruption(game); }
+      else if (fast && this.st === 20) this.rain(game, 3, 'fire', 34, { ghost: true });
     } else if (this.state === 'arc') {
       this.vy += this.g; this.x += this.vx; this.y += this.vy;
-      if (this.st % (fast ? 22 : 34) === 0 && this.y < this.lavaY - 30) {
-        for (const k of this.phase3 ? [-0.3, 0, 0.3] : [0]) this.shoot(game, this.cx, this.cy, 2.6, 'fire', k);
+      if (this.st % (this.phase3 ? 36 : fast ? 26 : 34) === 0 && this.y < this.lavaY - 30) {
+        this.shoot(game, this.cx, this.cy, 2.6, 'fire');
         G.Audio.play('enemyShot');
       }
       if (this.vy > 0 && this.y > this.lavaY + 50 + this.nseg * 4 && this.seg(this.nseg - 1).y > this.lavaY + 10) this.set('under');
@@ -692,11 +727,11 @@ G.BossGaruda = class extends G.Boss {
       case 'eyes': // лазерный взгляд по герою трижды
         if (this.st === 1 || this.st === 30 || this.st === 60) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, 34, 20, 18));
         if (this.st % 6 === 0) G.Particles.sparks(this.cx + this.facing * 20, this.cy, 2, '#ff60c0', 1);
-        if (this.st > 110) { this.set('idle'); this.cool = 40; }
+        if (this.st > 110) { this.recover(45); this.cool = 40; }
         break;
       case 'feathers':
         if (this.st % 18 === 1 && this.st < (fast ? 60 : 40)) { for (let i = -2; i <= 2; i++) this.shoot(game, this.cx, this.cy + 8, 2.6, 'feather', i * 0.18); G.Audio.play('enemyShot'); }
-        if (this.st > 70) { this.set('idle'); this.cool = fast ? 40 : 70; }
+        if (this.st > 70) { this.recover(40); this.cool = fast ? 50 : 70; }
         break;
       case 'diveAim':
         this.tx = p.cx; this.ty = A.floor - this.h - 4;
@@ -718,7 +753,7 @@ G.BossGaruda = class extends G.Boss {
         game.wind = this.facing * (fast ? 1.5 : 1.1);
         if (this.st % 2 === 0) G.Particles.add({ x: this.facing > 0 ? game.cam.x : game.cam.x + G.W, y: game.cam.y + G.rand(40, G.H - 20), vx: this.facing * 6, life: 80, color: '#ffffff', kind: 'dot' });
         if (fast && this.st % 30 === 15) this.shoot(game, this.cx, this.cy, 2.4, 'feather');
-        if (this.st > 110) { game.wind = 0; this.set('idle'); this.cool = 50; }
+        if (this.st > 110) { game.wind = 0; this.recover(40); this.cool = 50; }
         break;
     }
     if (this.state !== 'gust') game.wind = 0;
@@ -865,7 +900,7 @@ G.BossPrince = class extends G.Boss {
         this.y += Math.sin(this.t * 0.06) * 0.3;
         if (--this.cool <= 0) {
           const r = Math.random(), ghosts = game.entities.filter((e) => e instanceof G.Ghost && !e.dead).length;
-          this.set(r < 0.3 ? 'vanish' : r < 0.6 ? 'ring' : r < 0.85 || ghosts >= 2 ? 'aim' : 'summon');
+          this.set(r < 0.3 ? 'vanish' : r < 0.6 ? 'ring' : r < 0.85 || ghosts >= 1 ? 'aim' : 'summon');
         }
         break;
       case 'vanish':
@@ -875,16 +910,16 @@ G.BossPrince = class extends G.Boss {
         if (this.st > 40) { this.set('idle'); this.cool = 20; }
         break;
       case 'ring':
-        if (this.st === 25 || this.st === 50) { this.ring(game, this.cx, this.cy, 12, 1.5, 'orb', this.st * 0.13); G.Audio.play('enemyShot'); }
-        if (this.st > 70) { this.set('idle'); this.cool = 45; }
+        if (this.st === 25) { this.ring(game, this.cx, this.cy, 12, 1.5, 'orb', Math.random()); G.Audio.play('enemyShot'); }
+        if (this.st > 70) { this.recover(40); this.cool = 50; }
         break;
       case 'aim':
         if (this.st % 12 === 0 && this.st > 0 && this.st <= 36) { this.shoot(game, this.cx, this.y + 8, 2.8, 'orb', 0, { ghost: true }); G.Audio.play('enemyShot'); }
-        if (this.st > 55) { this.set('idle'); this.cool = 40; }
+        if (this.st > 55) { this.recover(40); this.cool = 50; }
         break;
       case 'summon':
-        if (this.st === 30) { for (const sd of [-1, 1]) { const g = new G.Ghost(this.cx + sd * 34, this.cy); g.active = true; game.spawn(g); G.Particles.fx('fx_ring', this.cx + sd * 34, this.cy - 8); } G.Audio.play('teleport'); }
-        if (this.st > 60) { this.set('idle'); this.cool = 50; }
+        if (this.st === 30) { this.summonGhost(game, this.cx + this.facing * 34, this.cy); G.Audio.play('teleport'); }
+        if (this.st > 60) { this.recover(40); this.cool = 50; }
         break;
     }
   }
@@ -903,26 +938,26 @@ G.BossPrince = class extends G.Boss {
       case 'lasers':
         if (this.st === 1) { const off = Math.random() * 100; for (let i = 0; i < 4; i++) game.spawn(new G.Beam(A.x + 40 + ((off + i * 110) % 400), game.cam.y, A.floor, 50, 40, 18)); }
         if (this.st === 60) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, 40, 30, 18));
-        if (this.st > 130) { this.set('idle'); this.cool = two ? 25 : 40; }
+        if (this.st > 130) { this.recover(45); this.cool = two ? 30 : 40; }
         break;
       case 'crossfire': // два залпа лучей «ёлочкой», между ними — луч по герою
         if (this.st === 1) for (let i = 0; i < 5; i++) game.spawn(new G.Beam(A.x + 30 + i * 100, game.cam.y, A.floor, 44, 30, 18));
         if (this.st === 45) for (let i = 0; i < 4; i++) game.spawn(new G.Beam(A.x + 80 + i * 100, game.cam.y, A.floor, 44, 30, 18));
         if (this.st === 30 || this.st === 90) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, 36, 24, 18));
-        if (this.st > 150) { this.set('idle'); this.cool = 30; }
+        if (this.st > 150) { this.recover(45); this.cool = 30; }
         break;
       case 'ghostStorm':
-        if (this.st === 20) { for (const sd of [-1, 0, 1]) { const g = new G.Ghost(this.cx + sd * 50, this.cy + 20); g.active = true; game.spawn(g); G.Particles.fx('fx_ring', this.cx + sd * 50, this.cy + 12); } G.Audio.play('teleport'); }
+        if (this.st === 20 && !game.entities.some((e) => e instanceof G.Ghost && !e.dead)) { for (const sd of [-1, 1]) this.summonGhost(game, this.cx + sd * 50, this.cy + 20); G.Audio.play('teleport'); }
         if (this.st === 50 || this.st === 80) { this.ring(game, this.cx, this.cy + 10, 14, 1.6, 'orb', this.st * 0.1); G.Audio.play('enemyShot'); }
-        if (this.st > 110) { this.set('idle'); this.cool = 40; }
+        if (this.st > 110) { this.recover(45); this.cool = 40; }
         break;
       case 'spiral':
         if (this.st % (two ? 4 : 5) === 0 && this.st < 90) {
           const a = this.st * 0.21;
-          for (const off of two ? [0, Math.PI * 2 / 3, Math.PI * 4 / 3] : [0, Math.PI]) game.spawn(new G.EnemyShot(this.cx, this.cy + 6, Math.cos(a + off) * 1.7, Math.sin(a + off) * 1.7, 'orb', { ghost: true, life: 260 }));
+          for (const off of two ? [0, Math.PI * 2 / 3, Math.PI * 4 / 3] : [0, Math.PI]) game.spawn(new G.EnemyShot(this.cx, this.cy + 6, Math.cos(a + off) * 1.7, Math.sin(a + off) * 1.7, 'orb', { ghost: true, life: 190 }));
           if (this.st % 15 === 0) G.Audio.play('enemyShot');
         }
-        if (this.st > 110) { this.set('idle'); this.cool = 40; }
+        if (this.st > 110) { this.recover(45); this.cool = 40; }
         break;
       case 'diveAim':
         this.x = G.lerp(this.x, G.clamp(p.cx - this.w / 2, this.L, this.R - this.w), 0.08);
@@ -945,7 +980,7 @@ G.BossPrince = class extends G.Boss {
   // Истинный Глаз: 1 — Взгляд, 2 — Буря, 3 — Тьма, 4 — Ярость
   form3(game, p) {
     const A = this.arena, top = game.cam.y + 26, ph = this.ph;
-    const cd = [0, 50, 40, 40, 26][ph];
+    const cd = [0, 50, 45, 45, 35][ph], rec = [0, 55, 50, 50, 45][ph];
     switch (this.state) {
       case 'idle': {
         const sp = [0, 0.012, 0.022, 0.016, 0.026][ph];
@@ -959,24 +994,24 @@ G.BossPrince = class extends G.Boss {
       }
       case 'stare': // лучи из зрачка по герою
         for (const k of [1, 28, 55]) if (this.st === k) game.spawn(new G.Beam(p.cx, game.cam.y, A.floor, ph >= 4 ? 26 : 34, 20, 18));
-        if (this.st > 100) { this.set('idle'); this.cool = cd; }
+        if (this.st > 100) { this.recover(rec); this.cool = cd; }
         break;
       case 'tears': // прицельные очереди
         if (this.st % 14 === 0 && this.st <= 56) { for (const k of [-0.2, 0, 0.2]) this.shoot(game, this.cx, this.cy, 2.7, 'orb', k, { ghost: true }); G.Audio.play('enemyShot'); }
-        if (this.st > 80) { this.set('idle'); this.cool = cd; }
+        if (this.st > 80) { this.recover(rec); this.cool = cd; }
         break;
       case 'meteors':
         if (this.st === 10) { G.Audio.play('roar'); game.shake(5, 50); this.rain(game, 9, 'rock', 26); }
         if (this.st === 50) { this.ring(game, this.cx, this.cy, 14, 1.6, 'orb', 0.3); G.Audio.play('enemyShot'); }
-        if (this.st > 90) { this.set('idle'); this.cool = cd; }
+        if (this.st > 90) { this.recover(rec); this.cool = cd; }
         break;
       case 'spiral':
         if (this.st % 4 === 0 && this.st < 96) {
           const a = this.st * (ph >= 4 ? 0.25 : 0.19);
-          for (const off of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) game.spawn(new G.EnemyShot(this.cx, this.cy, Math.cos(a + off) * 1.6, Math.sin(a + off) * 1.6, 'orb', { ghost: true, life: 240 }));
+          for (const off of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) game.spawn(new G.EnemyShot(this.cx, this.cy, Math.cos(a + off) * 1.6, Math.sin(a + off) * 1.6, 'orb', { ghost: true, life: 160 }));
           if (this.st % 16 === 0) G.Audio.play('enemyShot');
         }
-        if (this.st > 116) { this.set('idle'); this.cool = cd; }
+        if (this.st > 116) { this.recover(rec); this.cool = cd; }
         break;
       case 'blink': // глаз закрывается, исчезает во тьме и открывается в другом месте
         this.closed = this.st < 50;
@@ -986,25 +1021,29 @@ G.BossPrince = class extends G.Boss {
         if (this.st > 80) { this.closed = false; this.set('idle'); this.cool = cd; }
         break;
       case 'ghosts':
-        if (this.st === 20) { for (const sd of [-1, 1]) { const g = new G.Ghost(this.cx + sd * 60, this.cy + 10); g.active = true; game.spawn(g); } G.Audio.play('teleport'); }
-        if (this.st > 60) { this.set('idle'); this.cool = cd; }
+        if (this.st === 20 && !game.entities.some((e) => e instanceof G.Ghost && !e.dead)) { this.summonGhost(game, this.cx + this.facing * 60, this.cy + 10); G.Audio.play('teleport'); }
+        if (this.st > 60) { this.recover(rec); this.cool = cd; }
         break;
       case 'hbeam': // луч над полом — спасайся на платформах
         if (this.st === 1) { game.spawn(new G.HBeam(A.x + 16, A.floor - 30, G.W - 32, 30, 66, 40)); G.UI.toast('НАВЕРХ, НА ПЛАТФОРМЫ!'); }
-        if (this.st === 70) { this.ring(game, this.cx, this.cy, 12, 1.5, 'orb', 0.5); G.Audio.play('enemyShot'); }
-        if (this.st > 120) { this.set('idle'); this.cool = cd; }
+                if (this.st > 120) { this.recover(rec); this.cool = cd; }
         break;
       case 'crash': // падает на арену и снова взлетает
+        if (this.st === 1) this.landed = false;
         if (this.st < 30) { this.x = G.lerp(this.x, G.clamp(p.cx - this.w / 2, this.L, this.R - this.w), 0.1); if (this.st === 6) game.spawn(new G.Warning(this.x, this.y, this.w, A.floor - this.y, 24)); this.vy = 2; break; }
-        if (this.bottom < A.floor) { this.vy += 0.8; this.y = Math.min(this.y + this.vy, A.floor - this.h); break; }
-        if (this.vy > 0) {
-          this.vy = 0; game.shake(8, 20); G.Audio.play('explode');
-          game.spawn(new G.Shockwave(this.x, A.floor, -1, 3.4)); game.spawn(new G.Shockwave(this.x + this.w, A.floor, 1, 3.4));
-          this.ring(game, this.cx, this.cy, 12, 1.8, 'orb', 0);
-          this.restT = 0;
+        if (!this.landed) {
+          this.vy += 0.8; this.y = Math.min(this.y + this.vy, A.floor - this.h);
+          if (this.bottom >= A.floor) {
+            this.landed = true; this.vy = 0; this.restT = 0;
+            game.shake(8, 20); G.Audio.play('explode');
+            game.spawn(new G.Shockwave(this.x, A.floor, -1, 3.4)); game.spawn(new G.Shockwave(this.x + this.w, A.floor, 1, 3.4));
+            this.ring(game, this.cx, this.cy, 8, 1.8, 'orb', 0);
+          }
+          break;
         }
-        this.dmgMul = 1.3;
-        if (++this.restT > 40) { this.dmgMul = 1; this.y = G.lerp(this.y, top, 0.08); if (this.restT > 90) { this.set('idle'); this.cool = cd; } }
+        // лежит на полу — уязвим, потом взлетает
+        this.dmgMul = 1.4;
+        if (++this.restT > 60) { this.dmgMul = 1; this.y = G.lerp(this.y, top, 0.08); if (this.restT > 100) this.recover(rec); }
         break;
     }
   }
@@ -1068,6 +1107,7 @@ G.BossPrince = class extends G.Boss {
       for (let dy = 28; dy > 28 - h; dy--) { const w = Math.round(Math.sqrt(Math.max(0, 28 * 28 - dy * dy))); c.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
       if (lid >= 1) { c.fillStyle = '#ff60d0'; c.fillRect(cx - 24, cy, 49, 1); }
     }
+    this.drawDizzy();
   }
 };
 
