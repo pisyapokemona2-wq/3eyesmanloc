@@ -36,10 +36,35 @@ G.UI = (() => {
   };
   U._shop = SHOP;
 
+  const ACTION_NAMES = {
+    left: 'Влево', right: 'Вправо', up: 'Вверх', down: 'Вниз · удар сверху в прыжке', jump: 'Прыжок (дольше — выше)',
+    shoot: 'Выстрел глазом (держать — заряд)', shootUp: 'Выстрел вверх', spear: 'Копьё: бросить / вернуть', dash: 'Рывок', special: 'Пробуждение глаза', pause: 'Пауза',
+  };
+  function controlRows() {
+    const I = G.Input, rows = [{ id: 'scheme', label: 'СХЕМА', value: I.scheme() === 'mouse' ? '◄ WASD + МЫШЬ ►' : '◄ КЛАССИКА ►' }];
+    for (const a of I.ACTIONS) {
+      if (a === 'shootUp' && I.usingMouse()) continue; // с мышью целишься прицелом
+      rows.push({ action: a, label: ACTION_NAMES[a], value: (I.binds()[a] || []).map(I.keyName).join(' / ') || '—' });
+    }
+    rows.push({ id: 'upjump', label: 'Прыжок также на «Вверх»', value: G.Save.data.upJump !== false ? 'ВКЛ' : 'ВЫКЛ' });
+    rows.push({ id: 'reset', label: 'Сбросить клавиши', value: '' });
+    rows.push({ id: 'back', label: 'Назад', value: '' });
+    return rows;
+  }
+  // [Z], [X], [SHIFT]… в подсказках заменяются на реально назначенные клавиши
+  const KEY_TOKENS = { Z: 'jump', X: 'shoot', A: 'shootUp', C: 'spear', V: 'special', SHIFT: 'dash', '↑': 'up', '↓': 'down', '←': 'left', '→': 'right', ESC: 'pause' };
+  U.keys = (text) => String(text).replace(/\[([^\]]+)\]/g, (m, k) => {
+    const a = KEY_TOKENS[k];
+    if (!a) return m;
+    const I = G.Input;
+    if (a === 'shootUp' && I.usingMouse()) return '[прицел вверх + ' + I.keyName((I.binds().shoot || [])[0]) + ']';
+    return '[' + I.keyName((I.binds()[a] || [])[0]) + ']';
+  });
+  U.actionKey = (a) => G.Input.keyName((G.Input.binds()[a] || [])[0]);
   function nav(game, n) {
     const I = G.Input;
-    if (I.pressed('up')) { game.menu.i = (game.menu.i - 1 + n) % n; G.Audio.play('select'); }
-    if (I.pressed('down')) { game.menu.i = (game.menu.i + 1) % n; G.Audio.play('select'); }
+    if (I.pressed('mUp')) { game.menu.i = (game.menu.i - 1 + n) % n; G.Audio.play('select'); }
+    if (I.pressed('mDown')) { game.menu.i = (game.menu.i + 1) % n; G.Audio.play('select'); }
     return game.menu.i;
   }
   function titleItems() {
@@ -52,7 +77,6 @@ G.UI = (() => {
     items.push({ id: 'shake', label: 'ТРЯСКА  ' + (s.shake ? 'ВКЛ' : 'ВЫКЛ') });
     items.push({ id: 'revive', label: 'БЕССМЕРТИЕ [F1]  ' + (s.revive ? 'ВКЛ' : 'ВЫКЛ') });
     items.push({ id: 'god', label: 'НЕУЯЗВИМОСТЬ [F2]  ' + (s.god ? 'ВКЛ' : 'ВЫКЛ') });
-    items.push({ id: 'upjump', label: 'ПРЫЖОК НА ↑  ' + (s.upJump !== false ? 'ВКЛ' : 'ВЫКЛ') });
     return items;
   }
   function vol(key, dir) {
@@ -74,8 +98,8 @@ G.UI = (() => {
       case 'title': {
         const items = titleItems(), i = nav(game, items.length), it = items[i];
         if (it.id === 'music' || it.id === 'sfx') {
-          if (I.pressed('left')) vol(it.id, -1);
-          else if (I.pressed('right') || I.pressed('confirm')) vol(it.id, 1);
+          if (I.pressed('mLeft')) vol(it.id, -1);
+          else if (I.pressed('mRight') || I.pressed('confirm')) vol(it.id, 1);
           break;
         }
         if (I.pressed('confirm')) {
@@ -96,9 +120,26 @@ G.UI = (() => {
         if (I.pressed('back') || I.pressed('pause')) { game.state = 'title'; game.menu = { i: 1 }; G.Audio.play('select'); }
         break;
       }
-      case 'controls':
-        if (I.pressed('back') || I.pressed('confirm') || I.pressed('pause')) { game.state = 'title'; game.menu = { i: 0 }; G.Audio.play('select'); }
+      case 'controls': {
+        if (U.rebinding) break; // ждём клавишу
+        const rows = controlRows(), i = nav(game, rows.length), r = rows[i];
+        if (I.pressed('back')) { game.state = 'title'; game.menu = { i: 0 }; G.Audio.play('select'); break; }
+        if (r.id === 'scheme' && (I.pressed('mLeft') || I.pressed('mRight') || I.pressed('confirm'))) {
+          I.setScheme(I.scheme() === 'mouse' ? 'classic' : 'mouse'); G.Audio.play('confirm'); break;
+        }
+        if (!I.pressed('confirm')) break;
+        G.Audio.play('confirm');
+        if (r.action) {
+          U.rebinding = r.action;
+          I.capture((code) => {
+            if (!(code === 'Escape' && r.action !== 'pause')) I.rebind(r.action, code);
+            U.rebinding = null; G.Input.clearAny(); G.Audio.play('select');
+          });
+        } else if (r.id === 'upjump') { G.Save.data.upJump = G.Save.data.upJump === false; G.Save.store(); }
+        else if (r.id === 'reset') { I.resetBinds(); U.msg = 'Настройки сброшены'; }
+        else if (r.id === 'back') { game.state = 'title'; game.menu = { i: 0 }; }
         break;
+      }
       case 'pause': {
         const i = nav(game, 5);
         if (I.pressed('pause')) { game.state = 'play'; G.Audio.play('pause'); break; }
@@ -172,7 +213,7 @@ G.UI = (() => {
     }
   };
 
-  U.toast = (text) => { toastMsg = text ? { text, t: 0 } : null; };
+  U.toast = (text) => { toastMsg = text ? { text: U.keys(text), t: 0 } : null; };
   let toastMsg = null;
   function drawToast() {
     if (!toastMsg) return;
@@ -220,6 +261,7 @@ G.UI = (() => {
       case 'title': case 'select': case 'controls': return drawTitle(game);
       case 'play': case 'pause': case 'ability':
         drawHUD(game);
+        if (game.state === 'play' && G.Input.usingMouse()) drawCrosshair(game);
         if (game.state === 'pause') drawPause(game);
         if (game.state === 'ability') drawAbility(game);
         return;
@@ -280,14 +322,34 @@ G.UI = (() => {
         if (sel) cursor(game, W / 2 - 110, 121 + i * 13);
       }
     } else {
-      X.frame(W / 2 - 170, 96, 340, 150);
-      T('УПРАВЛЕНИЕ', W / 2, 104, { align: 'center', color: '#9affc8' });
-      const rows = [['← →', 'ходьба'], ['↓', 'присесть'], ['Z или ↑', 'прыжок'], ['C', 'копьё: бросить / вернуть'], ['X', 'выстрел глазом *'], ['A', 'выстрел вверх *'], ['SHIFT', 'рывок *'], ['↓ в прыжке', 'удар сверху *'], ['V', 'пробуждение глаза *'], ['ESC', 'пауза']];
-      rows.forEach(([k, v], i) => { T(k, W / 2 - 154, 118 + i * 11, { color: '#ffe060' }); T(v, W / 2 - 80, 118 + i * 11, { color: '#e8e0ff' }); });
-      T('* — способности открываются по ходу игры', W / 2, 233, { align: 'center', color: '#ff9a8a', shadow: false });
+      const rows = controlRows();
+      X.frame(W / 2 - 180, 18, 360, 52 + rows.length * 11);
+      T('УПРАВЛЕНИЕ', W / 2, 26, { align: 'center', color: '#9affc8' });
+      rows.forEach((r, i) => {
+        const y = 40 + i * 11, sel = i === game.menu.i;
+        if (sel) X.rect(W / 2 - 172, y - 2, 344, 11, 'rgba(255,224,96,0.14)');
+        T(r.label, W / 2 - 164, y, { color: sel ? '#ffe060' : '#e8e0ff' });
+        const waiting = U.rebinding && U.rebinding === r.action;
+        if (waiting) { if (game.frame % 30 < 20) T('нажми клавишу…', W / 2 + 164, y, { align: 'right', color: '#9affc8' }); }
+        else T(r.value, W / 2 + 164, y, { align: 'right', color: r.id === 'scheme' ? '#9affc8' : '#ffd070' });
+      });
+      const hy = 44 + rows.length * 11;
+      T(U.rebinding ? 'Нажми клавишу или кнопку мыши · ESC — отмена' : '↑↓ — выбор · ENTER — сменить клавишу · ESC — назад', W / 2, hy, { align: 'center', color: '#a098b8', shadow: false });
+      if (G.Input.usingMouse()) T('Мышь: прицел — выстрел и копьё летят в сторону курсора', W / 2, hy + 11, { align: 'center', color: '#ff9a8a', shadow: false });
     }
   }
 
+  // прицел для схемы «клавиатура + мышь»
+  function drawCrosshair(game) {
+    const m = G.Input.mouse, x = Math.round(m.x), y = Math.round(m.y), c = X.ctx;
+    const charge = game.player && game.player.charge > 10 ? Math.min(1, game.player.charge / game.player.chargeMax(game)) : 0;
+    const r = 5 - Math.round(charge * 2), col = charge >= 1 ? '#ffffff' : '#9affc8';
+    c.fillStyle = '#120a1c';
+    for (const [dx, dy, w, h] of [[-r - 3, -1, 4, 3], [r, -1, 4, 3], [-1, -r - 3, 3, 4], [-1, r, 3, 4]]) c.fillRect(x + dx, y + dy, w, h);
+    c.fillStyle = col;
+    for (const [dx, dy, w, h] of [[-r - 2, 0, 3, 1], [r, 0, 3, 1], [0, -r - 2, 1, 3], [0, r, 1, 3]]) c.fillRect(x + dx, y + dy, w, h);
+    c.fillRect(x, y, 1, 1);
+  }
   function drawHUD(game) {
     const p = game.player;
     if (!p) return;
@@ -347,6 +409,7 @@ G.UI = (() => {
 
   // Плашка подсказки: текст, где [X] — клавиши в «колпачках»
   function drawHint(text, game) {
+    text = U.keys(text);
     const parts = text.split(/(\[[^\]]+\])/).filter(Boolean);
     let w = 0;
     for (const p of parts) w += p[0] === '[' ? X.textWidth(p.slice(1, -1)) + 8 : X.textWidth(p);
@@ -393,7 +456,7 @@ G.UI = (() => {
       T('НОВАЯ СПОСОБНОСТЬ', W / 2, 122, { align: 'center', color: '#9affc8' });
       T(a.name, W / 2, 136, { align: 'center', scale: 2, color: '#ffe060', outline: '#2a1000' });
       a.desc.forEach((l, i) => T(l, W / 2, 162 + i * 12, { align: 'center', color: '#e8e0ff' }));
-      T('Клавиша: ' + a.key, W / 2, 168 + a.desc.length * 12, { align: 'center', color: '#ffb070' });
+      T('Клавиша: ' + U.actionKey({ spear: 'spear', shot: 'shoot', djump: 'jump', dash: 'dash', charge: 'shoot', wall: 'jump', pound: 'down', eye: 'special' }[a.id] || 'jump'), W / 2, 168 + a.desc.length * 12, { align: 'center', color: '#ffb070' });
     }
     if (t > 50 && game.frame % 40 < 28) T('Z — дальше', W / 2, 240, { align: 'center', color: '#ffffff' });
   }

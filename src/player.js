@@ -435,6 +435,7 @@ G.Player = class Player extends G.Entity {
       this.handleShooting(game);
       if (I.pressed('spear') && this.stun <= 0 && this.dashT <= 0) {
         if (this.hasSpear && this.throwT <= 0) {
+          if (I.usingMouse()) this.facing = this.aimAngle(game, this.cx, this.y + 11).dir;
           this.hasSpear = false;
           this.throwT = 14;
           this.animT = 0;
@@ -466,6 +467,12 @@ G.Player = class Player extends G.Entity {
     for (const e of game.targets()) if (G.dist(e.cx, e.bottom, this.cx, this.bottom) < 34 || (e.isBoss && G.overlap(e, { x: this.x - 6, y: this.y, w: this.w + 12, h: this.h + 8 }))) e.hurt(3, game, { vx: Math.sign(e.cx - this.cx), pound: true });
   }
 
+  // угол прицеливания мышью: направление (±1) и наклон относительно него
+  aimAngle(game, ex, ey) {
+    const m = G.Input.mouse, wx = m.x + game.cam.x, wy = m.y + game.cam.y;
+    const dx = wx - ex, dy = wy - ey, dir = dx < 0 ? -1 : 1;
+    return { dir, angle: G.clamp(Math.atan2(dy, Math.abs(dx) + 0.001), -Math.PI / 2 + 0.06, Math.PI / 2 - 0.06) };
+  }
   chargeMax(game) { return Math.round(56 / (1 + game.stats.charge * 0.35)); }
 
   handleShooting(game) {
@@ -474,8 +481,14 @@ G.Player = class Player extends G.Entity {
     const ey = this.y + (this.crouching ? 2 : 4), ex = this.cx + this.facing * 5;
     const fireDown = I.down('shoot') || I.down('shootUp'), firePressed = I.pressed('shoot') || I.pressed('shootUp');
     if (fireDown) this.chargeUp = I.down('shootUp'); // заряженный выстрел летит туда, куда его копили
-    const up = (I.down('up') || I.down('shootUp') || (!fireDown && this.charge > 0 && this.chargeUp)) && !this.crouching ? -Math.PI / 4 : 0;
-    this.aimUp = up !== 0;
+    let up = (I.down('up') || I.down('shootUp') || (!fireDown && this.charge > 0 && this.chargeUp)) && !this.crouching ? -Math.PI / 4 : 0;
+    // клавиатура + мышь: стреляем туда, куда смотрит прицел
+    if (I.usingMouse()) {
+      const a = this.aimAngle(game, ex, ey);
+      if (fireDown || firePressed || this.charge > 0) this.facing = a.dir;
+      up = a.angle;
+    }
+    this.aimUp = up < -0.5;
     if (game.eyeMode > 0) {
       if (fireDown && this.shotCd <= 0) {
         for (const a of [-0.16, 0, 0.16]) game.spawn(new G.EyeShot(ex, ey, this.facing, { beam: true, angle: a + up, dmg: 2 }));

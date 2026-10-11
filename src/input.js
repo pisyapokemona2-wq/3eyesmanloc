@@ -1,21 +1,36 @@
 'use strict';
 // Ввод: клавиатура, геймпад и сенсорные кнопки сводятся к набору «действий».
 G.Input = (() => {
-  const map = {
-    left: ['ArrowLeft'],
-    right: ['ArrowRight'],
-    up: ['ArrowUp'],
-    down: ['ArrowDown'],
-    jump: ['KeyZ', 'Space', 'KeyK'],
-    shoot: ['KeyX', 'KeyJ'],
-    shootUp: ['KeyA', 'KeyU'],
-    spear: ['KeyC', 'KeyL'],
-    special: ['KeyV', 'KeyI'],
-    dash: ['ShiftLeft', 'ShiftRight', 'KeyF'],
-    pause: ['Escape', 'KeyP'],
-    confirm: ['Enter', 'KeyZ', 'Space'],
-    back: ['Escape', 'Backspace', 'KeyX'],
+  // Схемы управления. Игровые действия можно переназначить в меню «Управление» (хранится в сохранении).
+  const SCHEMES = {
+    classic: {
+      left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'],
+      jump: ['KeyZ', 'Space'], shoot: ['KeyX'], shootUp: ['KeyA'], spear: ['KeyC'],
+      special: ['KeyV'], dash: ['ShiftLeft', 'ShiftRight'], pause: ['Escape', 'KeyP'],
+    },
+    mouse: {
+      left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'],
+      jump: ['Space'], shoot: ['Mouse0'], shootUp: [], spear: ['Mouse2'],
+      special: ['KeyE'], dash: ['ShiftLeft', 'ShiftRight'], pause: ['Escape', 'KeyP'],
+    },
   };
+  const ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'shoot', 'shootUp', 'spear', 'dash', 'special', 'pause'];
+  // меню управляются всегда стрелками/Enter/Esc (и мышью), независимо от схемы
+  const FIXED = {
+    confirm: ['Enter', 'KeyZ', 'Space', 'Mouse0'],
+    back: ['Escape', 'Backspace'],
+    mUp: ['ArrowUp', 'KeyW'], mDown: ['ArrowDown', 'KeyS'], mLeft: ['ArrowLeft', 'KeyA'], mRight: ['ArrowRight', 'KeyD'],
+  };
+  const scheme = () => (G.Save.data.scheme === 'mouse' ? 'mouse' : 'classic');
+  const binds = () => {
+    const d = G.Save.data;
+    if (!d.binds || d.binds._scheme !== scheme()) { d.binds = JSON.parse(JSON.stringify(SCHEMES[scheme()])); d.binds._scheme = scheme(); }
+    return d.binds;
+  };
+  const map = new Proxy({}, { get: (_, a) => (FIXED[a] || binds()[a] || []), ownKeys: () => [...ACTIONS, ...Object.keys(FIXED)], getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) });
+  // мышь: позиция в координатах буфера 480×270
+  const mouse = { x: G.W / 2, y: G.H / 2, moved: false };
+  let capture = null;
   // Кнопки стандартного геймпада
   const padMap = {
     jump: [0], shoot: [2], shootUp: [4, 6], spear: [1], special: [3], dash: [5, 7], pause: [9],
@@ -38,6 +53,7 @@ G.Input = (() => {
       G.Audio.play('select');
       return;
     }
+    if (capture) { e.preventDefault(); const cb = capture; capture = null; cb(e.code); return; }
     held.add(e.code);
     latched.add(e.code);
     anyKeyLatch = true;
@@ -45,6 +61,20 @@ G.Input = (() => {
   });
   window.addEventListener('keyup', (e) => held.delete(e.code));
   window.addEventListener('pointerdown', () => { anyKeyLatch = true; window.focus(); });
+  window.addEventListener('mousedown', (e) => {
+    const code = 'Mouse' + e.button;
+    if (capture) { e.preventDefault(); const cb = capture; capture = null; cb(code); return; }
+    held.add(code); latched.add(code);
+  });
+  window.addEventListener('mouseup', (e) => held.delete('Mouse' + e.button));
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('mousemove', (e) => {
+    const X = G.Gfx, dpr = window.devicePixelRatio || 1;
+    if (!X) return;
+    mouse.x = (e.clientX * dpr - X.offX) / X.scale;
+    mouse.y = (e.clientY * dpr - X.offY) / X.scale;
+    mouse.moved = true;
+  });
   window.addEventListener('blur', () => held.clear());
 
   function padState() {
@@ -67,13 +97,14 @@ G.Input = (() => {
     touch,
     update() {
       const pad = padState();
-      for (const a in map) {
+      for (const a of [...ACTIONS, ...Object.keys(FIXED)]) {
         prev[a] = cur[a];
         let v = !!pad[a] || !!touch[a];
         let l = false;
         // ↑ — тоже прыжок (можно выключить в меню)
         const upJ = a === 'jump' && G.Save.data.upJump !== false;
         const codes = upJ ? map.jump.concat(map.up) : map[a];
+        if (FIXED[a] && a.startsWith('m')) { const base = { mUp: 'up', mDown: 'down', mLeft: 'left', mRight: 'right' }[a]; if (pad[base] || touch[base]) v = true; }
         if (upJ && (touch.up || pad.up)) v = true;
         for (const c of codes) {
           if (held.has(c)) v = true;
@@ -95,6 +126,31 @@ G.Input = (() => {
       return v;
     },
     clearAny() { anyKeyLatch = false; },
+    mouse,
+    SCHEMES, ACTIONS,
+    scheme,
+    usingMouse: () => scheme() === 'mouse',
+    binds,
+    // ожидание клавиши для переназначения
+    capture(cb) { capture = cb; },
+    cancelCapture() { capture = null; },
+    rebind(action, code) {
+      const b = binds();
+      for (const a of ACTIONS) if (a !== action) b[a] = b[a].filter((c) => c !== code); // одна клавиша — одно действие
+      b[action] = [code];
+      G.Save.store();
+    },
+    setScheme(name) { G.Save.data.scheme = name; G.Save.data.binds = null; binds(); G.Save.store(); },
+    resetBinds() { G.Save.data.binds = null; binds(); G.Save.store(); },
+    keyName(code) {
+      if (!code) return '—';
+      const N = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Space: 'ПРОБЕЛ', ShiftLeft: 'SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'CTRL', ControlRight: 'R-CTRL', AltLeft: 'ALT', AltRight: 'R-ALT', Escape: 'ESC', Enter: 'ENTER', Backspace: 'BACKSPACE', Tab: 'TAB', CapsLock: 'CAPS', Mouse0: 'ЛКМ', Mouse1: 'СКМ', Mouse2: 'ПКМ', Mouse3: 'МЫШЬ-4', Mouse4: 'МЫШЬ-5' };
+      if (N[code]) return N[code];
+      if (code.startsWith('Key')) return code.slice(3);
+      if (code.startsWith('Digit')) return code.slice(5);
+      if (code.startsWith('Numpad')) return 'NUM ' + code.slice(6);
+      return code.toUpperCase();
+    },
   };
 })();
 

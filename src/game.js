@@ -413,9 +413,15 @@ G.Game = class Game {
       const a = Math.round(this.fadeA * 8) / 8;
       c.fillStyle = `rgba(6,2,12,${a})`; c.fillRect(0, 0, G.W, G.H);
     }
+    this.updateCursor();
     X.present();
   }
 
+  // системный курсор прячем в игре со схемой «клавиатура + мышь» (рисуется свой прицел)
+  updateCursor() {
+    const want = this.state === 'play' && G.Input.usingMouse() ? 'none' : 'default';
+    if (this._cursor !== want) { this._cursor = want; G.Gfx.canvas.style.cursor = want; }
+  }
   renderWorld() {
     const X = G.Gfx, c = X.ctx, L = this.level;
     let sx = 0, sy = 0;
