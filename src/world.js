@@ -25,7 +25,7 @@ const ENEMY_CHARS = {
   w: 'imp', b: 'bat', f: 'frog', t: 'head', h: 'hedgehog', g: 'ghost', p: 'flame', r: 'rat', l: 'slime',
   y: 'yeti', q: 'penguin', k: 'knight', m: 'monk', n: 'drone', a: 'harpy', x: 'crow', j: 'fish', c: 'crystal', s: 'spiderling',
 };
-const ITEM_CHARS = { o: 'coin', O: 'bigcoin', '$': 'bigcoin', H_: 'heart', e: 'eye', K: 'checkpoint', S: 'spring', M: 'hplat', N: 'vplat', L: 'life', U: 'fan' };
+const ITEM_CHARS = { o: 'coin', O: 'bigcoin', '$': 'bigcoin', e: 'eye', K: 'checkpoint', S: 'spring', M: 'hplat', N: 'vplat', L: 'life', U: 'fan' };
 
 G.Level = class Level {
   constructor(def) {

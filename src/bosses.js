@@ -80,7 +80,7 @@ G.Boss = class Boss extends G.Enemy {
     if (this.state === 'intro') { this.introUpdate && this.introUpdate(game); if (this.st > 100) this.set('idle'); return; }
     this.think(game);
   }
-  spr(name, x, y, flip) { G.Gfx.spr(name, Math.round(x), Math.round(y), flip, this.flash > 0 && this.flash % 2 === 0); }
+  spr(name, x, y, flip) { G.Gfx.spr(name, Math.round(x), Math.round(y), flip, this.flash >= 4 && !this.dying); }
 };
 
 // 1. СТАЛЬНОЙ БЫК -------------------------------------------------------------
